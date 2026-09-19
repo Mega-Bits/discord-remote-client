@@ -31,11 +31,10 @@ if [ "$(id -u)" = "0" ]; then
     chown discord:discord "$XDG_RUNTIME_DIR"
     chmod 700 "$XDG_RUNTIME_DIR"
 
+    echo "Starting system DBus..."
     mkdir -p /run/dbus
-    if [ ! -S /run/dbus/system_bus_socket ]; then
-        echo "Starting system DBus..."
-        dbus-daemon --system --fork
-    fi
+    rm -f /run/dbus/system_bus_socket /run/dbus/pid
+    dbus-daemon --system --fork
 
     exec gosu discord /bin/bash "$0" "$@"
 fi
@@ -57,13 +56,7 @@ cleanup() {
 trap cleanup TERM INT EXIT
 
 find_discord_app_asar() {
-    find "$HOME/.config/discord" \
-        -maxdepth 4 \
-        -type f \
-        -path "$HOME/.config/discord/app-*/resources/app.asar" \
-        -print 2>/dev/null \
-        | sort -V \
-        | tail -n 1
+    find "$HOME/.config/discord"         -maxdepth 4         -type f         -path "$HOME/.config/discord/app-*/resources/app.asar"         -print 2>/dev/null         | sort -V         | tail -n 1
 }
 
 stop_discord() {
@@ -133,9 +126,7 @@ ensure_vencord() {
     fi
 
     echo "Installing Vencord into $HOME/.config/discord..."
-    /usr/local/bin/vencord-installer \
-        --install \
-        --location "$HOME/.config/discord"
+    /usr/local/bin/vencord-installer         --install         --location "$HOME/.config/discord"
 
     if [ ! -s "$resources/_app.asar" ]; then
         echo "Vencord installer completed, but _app.asar was not created."
@@ -159,22 +150,12 @@ maximize_discord_forever() {
 mkdir -p "$HOME/.vnc" "$VENCORD_USER_DATA_DIR"
 
 echo "Creating VNC credentials..."
-printf '%s\n' "$VNC_PASSWORD" | tigervncpasswd -f > "$HOME/.vnc/passwd"
+printf '%s
+' "$VNC_PASSWORD" | tigervncpasswd -f > "$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
 
 echo "Starting TigerVNC desktop on port 5900..."
-Xtigervnc :1 \
-    -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}" \
-    -depth "$SCREEN_DEPTH" \
-    -rfbport 5900 \
-    -SecurityTypes VncAuth \
-    -PasswordFile "$HOME/.vnc/passwd" \
-    -AlwaysShared \
-    -AcceptSetDesktopSize \
-    -FrameRate "$VNC_FRAME_RATE" \
-    -localhost no \
-    -nolisten tcp \
-    -desktop "Discord Remote Client" &
+Xtigervnc :1     -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}"     -depth "$SCREEN_DEPTH"     -rfbport 5900     -SecurityTypes VncAuth     -PasswordFile "$HOME/.vnc/passwd"     -AlwaysShared     -AcceptSetDesktopSize     -FrameRate "$VNC_FRAME_RATE"     -localhost no     -nolisten tcp     -desktop "Discord Remote Client" &
 VNC_PID=$!
 
 for _ in $(seq 1 30); do
@@ -214,8 +195,7 @@ if [ -z "$APP_ASAR" ] || [ ! -s "$APP_ASAR" ]; then
     echo "First start: letting Discord bootstrap its application files..."
     : > /tmp/discord-bootstrap.log
 
-    dbus-run-session -- /usr/bin/discord --no-sandbox \
-        > /tmp/discord-bootstrap.log 2>&1 &
+    dbus-run-session -- /usr/bin/discord --no-sandbox         > /tmp/discord-bootstrap.log 2>&1 &
 
     if ! wait_for_discord_app; then
         echo "Discord did not produce a stable app.asar within ${DISCORD_BOOTSTRAP_TIMEOUT}s."
