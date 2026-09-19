@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus-x11 \
     xauth \
     x11-utils \
+    xdg-utils \
     tigervnc-standalone-server \
     tigervnc-tools \
     openbox \
@@ -24,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1-mesa-dri \
     libegl-mesa0 \
     mesa-utils \
+    libpulse0 \
     fonts-liberation \
     fonts-noto-color-emoji \
     tzdata \
