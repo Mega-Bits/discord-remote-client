@@ -8,43 +8,43 @@ Docker image for running the official Discord Linux client with Vencord in a lig
 - Vencord
 - TigerVNC / Xtigervnc
 - Openbox
+- Mesa llvmpipe software rendering
 - DBus
 - Persistent Discord/Vencord profile
 - GitHub Actions image build for GHCR
 
 ## How startup works
 
-The current Discord Linux package may bootstrap/update the actual application into the user profile. The container therefore patches Vencord at runtime, after Discord has finished creating its `~/.config/discord/app-*/resources` directory.
+Discord's Linux package bootstraps the actual application into the user profile. Vencord is patched only after Discord has completed a clean, unmodified first start.
 
-On first startup:
+For every new Discord `app-<version>`:
 
 1. TigerVNC and Openbox start.
-2. Discord starts once and initializes/downloads its application files.
-3. The container waits until the downloaded application directory has stopped changing for a short period.
-4. Discord is cleanly stopped.
-5. The official Vencord CLI patches the stable Discord install using its native Linux auto-discovery.
-6. Discord starts again under a supervisor.
+2. If that Discord version has not completed bootstrap yet, an existing Vencord patch is temporarily removed.
+3. Discord starts unmodified.
+4. The container waits until the main Discord renderer has finished loading.
+5. Discord gets an additional grace period (45 seconds by default) to finish modules, updater work and first-run setup.
+6. A per-version bootstrap marker is written.
+7. Discord is stopped cleanly.
+8. Vencord patches Discord and the resulting `_app.asar` is verified.
+9. Discord starts under a supervisor.
 
-The Vencord installer itself supports the `~/.config/discord/app-*` layout, so the container does not try to guess an `app.asar` path.
+This also repairs older persistent volumes that were patched too early: if no bootstrap-complete marker exists for the current Discord version, Vencord is temporarily unpatched and the clean bootstrap is run once again.
 
 ## Discord cannot stay closed
 
-Discord runs under a supervisor loop. If a user closes the Discord window and the process exits, it is automatically started again after a short delay.
-
-The window is also automatically maximized whenever it appears.
+Discord runs under a supervisor loop. If a user closes the Discord process, it automatically starts again after a short delay. Its window is also automatically maximized.
 
 ## Resolution and Remote Desktop Manager
 
-TigerVNC accepts VNC `SetDesktopSize` requests. If the VNC viewer used by Remote Desktop Manager sends remote-resize requests, the actual remote desktop resolution can follow the client window/monitor size rather than merely scaling a fixed framebuffer.
+TigerVNC accepts VNC `SetDesktopSize` requests. If the VNC viewer used by Remote Desktop Manager sends remote-resize requests, the remote framebuffer can follow the RDM window/monitor size.
 
-The initial/fallback resolution is controlled with:
+Fallback resolution:
 
 ```env
 SCREEN_WIDTH=1920
 SCREEN_HEIGHT=1080
 ```
-
-A VNC server cannot discover the local monitor resolution on its own. The VNC client must send a desktop-resize request. If the RDM VNC viewer only offers Smart Sizing, it scales the image to the RDM window but does not change the remote framebuffer resolution. In that case either set `SCREEN_WIDTH`/`SCREEN_HEIGHT` to the monitor's native resolution or use a VNC viewer in RDM that supports remote resize.
 
 ## Image
 
@@ -66,7 +66,7 @@ Then deploy:
 
 ```bash
 docker compose pull
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 The default Compose file publishes VNC only on the server loopback interface:
@@ -75,14 +75,7 @@ The default Compose file publishes VNC only on the server loopback interface:
 127.0.0.1:5900
 ```
 
-Use an SSH tunnel in Remote Desktop Manager:
-
-```text
-Local:  127.0.0.1:5900
-Remote: 127.0.0.1:5900
-```
-
-Then connect the VNC session to `127.0.0.1:5900`.
+Use an SSH tunnel in Remote Desktop Manager and connect the VNC session to `127.0.0.1:5900`.
 
 ## Configuration
 
@@ -94,11 +87,11 @@ Then connect the VNC session to `127.0.0.1:5900`.
 | `SCREEN_DEPTH` | `24` | X11 color depth |
 | `VNC_FRAME_RATE` | `60` | Maximum VNC update frame rate |
 | `VNC_PASSWORD` | `changeme` | VNC authentication password |
-| `DISCORD_BOOTSTRAP_TIMEOUT` | `300` | Maximum seconds for first-run Discord initialization |
-| `DISCORD_BOOTSTRAP_STABLE_SECONDS` | `12` | Seconds the downloaded app directory must remain unchanged |
+| `DISCORD_BOOTSTRAP_TIMEOUT` | `300` | Maximum seconds to wait for Discord's main renderer during first-run bootstrap |
+| `DISCORD_BOOTSTRAP_GRACE_SECONDS` | `45` | Extra time after the main renderer loads before Discord is stopped and patched |
 | `DISCORD_RESTART_DELAY` | `2` | Delay before Discord is restarted after being closed |
 
-Discord, login state and Vencord data are persisted in the `discord_config` volume.
+Discord, login state, bootstrap markers and Vencord data are persisted in the `discord_config` volume.
 
 ## Security
 
