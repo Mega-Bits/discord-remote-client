@@ -43,6 +43,9 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
+          build-args: |
+            DISCORD_DEB_URL=${{ secrets.DISCORD_DEB_URL }}
+            DISCORD_DEB_SHA256=${{ secrets.DISCORD_DEB_SHA256 }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
