@@ -1,0 +1,22 @@
+services:
+  discord:
+    image: ghcr.io/mega-bits/discord-remote-client:latest
+    container_name: discord-remote-client
+    restart: unless-stopped
+    shm_size: "512m"
+
+    environment:
+      TZ: "${TZ:-Europe/Berlin}"
+      SCREEN_WIDTH: "${SCREEN_WIDTH:-1600}"
+      SCREEN_HEIGHT: "${SCREEN_HEIGHT:-900}"
+      SCREEN_DEPTH: "${SCREEN_DEPTH:-24}"
+      VNC_PASSWORD: "${VNC_PASSWORD}"
+
+    volumes:
+      - discord_config:/home/discord/.config
+
+    ports:
+      - "127.0.0.1:5900:5900"
+
+volumes:
+  discord_config:
