@@ -45,11 +45,26 @@ RUN set -eux; \
     test -n "$DISCORD_BIN"; \
     test -x "$DISCORD_BIN"; \
     DISCORD_TARGET="$(readlink -f "$DISCORD_BIN")"; \
-    DISCORD_DIR="$(dirname "$DISCORD_TARGET")"; \
-    if [ ! -d "$DISCORD_DIR/resources" ]; then \
-      DISCORD_DIR="$(dirname "$DISCORD_DIR")"; \
+    DISCORD_DIR="$(dpkg -L discord | while IFS= read -r path; do \
+      if [ "$(basename "$path")" = "resources" ] && [ -d "$path" ]; then \
+        dirname "$path"; \
+        break; \
+      fi; \
+    done)"; \
+    if [ -z "$DISCORD_DIR" ] || [ ! -d "$DISCORD_DIR/resources" ]; then \
+      DISCORD_DIR="$(find /usr/share /opt \
+        -type d -name resources \
+        -path '*/discord/resources' \
+        -print -quit \
+        2>/dev/null \
+        | sed 's#/resources$##')"; \
     fi; \
-    test -d "$DISCORD_DIR/resources"; \
+    if [ -z "$DISCORD_DIR" ] || [ ! -d "$DISCORD_DIR/resources" ]; then \
+      echo "Could not determine Discord installation directory"; \
+      echo "Discord package contents:"; \
+      dpkg -L discord || true; \
+      exit 1; \
+    fi; \
     echo "Discord launcher: $DISCORD_BIN"; \
     echo "Discord launcher target: $DISCORD_TARGET"; \
     echo "Discord install directory: $DISCORD_DIR"; \
