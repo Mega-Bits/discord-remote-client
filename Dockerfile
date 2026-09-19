@@ -1,5 +1,8 @@
 FROM debian:bookworm-slim
 
+ARG DISCORD_DEB_URL
+ARG DISCORD_DEB_SHA256
+
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/discord
 ENV DISPLAY=:1
@@ -24,8 +27,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --create-home --uid 1000 --shell /bin/bash discord
 
 RUN set -eux; \
-    curl -fL "https://discord.com/api/download?platform=linux&format=deb" \
-      -o /tmp/discord.deb; \
+    test -n "$DISCORD_DEB_URL"; \
+    test -n "$DISCORD_DEB_SHA256"; \
+    curl -fL "$DISCORD_DEB_URL" -o /tmp/discord.deb; \
+    echo "$DISCORD_DEB_SHA256  /tmp/discord.deb" | sha256sum -c -; \
     apt-get update; \
     apt-get install -y --no-install-recommends /tmp/discord.deb; \
     rm -f /tmp/discord.deb; \
@@ -41,30 +46,33 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    DISCORD_BIN="$(command -v discord || true)"; \
-    test -n "$DISCORD_BIN"; \
+    DISCORD_BIN="$(command -v discord)"; \
     test -x "$DISCORD_BIN"; \
     DISCORD_TARGET="$(readlink -f "$DISCORD_BIN")"; \
-    APP_ASAR="$(dpkg -L discord 2>/dev/null | grep '/resources/app\.asar$' | head -n 1 || true)"; \
-    if [ -z "$APP_ASAR" ] || [ ! -f "$APP_ASAR" ]; then \
-      APP_ASAR="$(find /usr/share /opt \
-        -type f \
-        -path '*/resources/app.asar' \
-        -print -quit \
-        2>/dev/null || true)"; \
+    DISCORD_DIR="$(dirname "$DISCORD_TARGET")"; \
+    APP_ASAR=""; \
+    for candidate in \
+      "$DISCORD_DIR/resources/app.asar" \
+      "/usr/share/discord/resources/app.asar" \
+      "/opt/discord/resources/app.asar"; do \
+      if [ -f "$candidate" ]; then \
+        APP_ASAR="$candidate"; \
+        break; \
+      fi; \
+    done; \
+    if [ -z "$APP_ASAR" ]; then \
+      APP_ASAR="$(find / -type f -path '*/resources/app.asar' \
+        -print -quit 2>/dev/null || true)"; \
     fi; \
-    if [ -z "$APP_ASAR" ] || [ ! -f "$APP_ASAR" ]; then \
-      echo "Could not locate Discord resources/app.asar"; \
-      echo "Discord launcher: $DISCORD_BIN"; \
-      echo "Discord launcher target: $DISCORD_TARGET"; \
+    if [ -z "$APP_ASAR" ]; then \
+      echo "Discord package does not contain resources/app.asar"; \
+      echo "Launcher: $DISCORD_BIN"; \
+      echo "Target: $DISCORD_TARGET"; \
       echo "Discord package contents:"; \
       dpkg -L discord || true; \
       exit 1; \
     fi; \
     DISCORD_DIR="$(dirname "$(dirname "$APP_ASAR")")"; \
-    test -d "$DISCORD_DIR/resources"; \
-    echo "Discord launcher: $DISCORD_BIN"; \
-    echo "Discord launcher target: $DISCORD_TARGET"; \
     echo "Discord app.asar: $APP_ASAR"; \
     echo "Discord install directory: $DISCORD_DIR"; \
     mkdir -p /opt/vencord; \
