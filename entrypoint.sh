@@ -23,6 +23,9 @@ DISCORD_FLAGS=(
     --no-sandbox
     --disable-gpu
     --ozone-platform=x11
+    --disable-renderer-backgrounding
+    --disable-background-timer-throttling
+    --disable-backgrounding-occluded-windows
 )
 
 if [ "$(id -u)" = "0" ]; then
@@ -63,13 +66,7 @@ cleanup() {
 trap cleanup TERM INT EXIT
 
 find_discord_app_asar() {
-    find "$HOME/.config/discord" \
-        -maxdepth 4 \
-        -type f \
-        -path "$HOME/.config/discord/app-*/resources/app.asar" \
-        -print 2>/dev/null \
-        | sort -V \
-        | tail -n 1
+    find "$HOME/.config/discord"         -maxdepth 4         -type f         -path "$HOME/.config/discord/app-*/resources/app.asar"         -print 2>/dev/null         | sort -V         | tail -n 1
 }
 
 bootstrap_marker_for_app() {
@@ -79,7 +76,8 @@ bootstrap_marker_for_app() {
 
     app_dir="$(dirname "$(dirname "$app_asar")")"
     app_name="$(basename "$app_dir")"
-    printf '%s/.bootstrap-ready-%s\n' "$HOME/.config/discord" "$app_name"
+    printf '%s/.bootstrap-ready-%s
+' "$HOME/.config/discord" "$app_name"
 }
 
 stop_discord() {
@@ -108,9 +106,7 @@ unpatch_vencord_for_bootstrap() {
     fi
 
     echo "Existing Vencord patch found before verified Discord bootstrap. Temporarily unpatching Discord..."
-    /usr/local/bin/vencord-installer \
-        --uninstall \
-        --location "$HOME/.config/discord"
+    /usr/local/bin/vencord-installer         --uninstall         --location "$HOME/.config/discord"
 
     if [ -e "$resources/_app.asar" ]; then
         echo "Vencord unpatch did not restore the original Discord app."
@@ -128,7 +124,7 @@ wait_for_discord_bootstrap() {
         app_asar="$(find_discord_app_asar || true)"
 
         if [ -n "$app_asar" ] && [ -s "$app_asar" ]; then
-            if grep -qE 'splashScreen\.pageReady|APP_ASYNC_INDEX_TSX_LOADED' /tmp/discord-bootstrap.log 2>/dev/null; then
+            if grep -qE 'splashScreen.pageReady|APP_ASYNC_INDEX_TSX_LOADED' /tmp/discord-bootstrap.log 2>/dev/null; then
                 echo "Discord reached pageReady."
                 echo "Giving Discord ${DISCORD_BOOTSTRAP_GRACE_SECONDS}s to finish remaining first-run work..."
                 sleep "$DISCORD_BOOTSTRAP_GRACE_SECONDS"
@@ -166,9 +162,7 @@ ensure_vencord() {
     fi
 
     echo "Installing Vencord into $HOME/.config/discord..."
-    /usr/local/bin/vencord-installer \
-        --install \
-        --location "$HOME/.config/discord"
+    /usr/local/bin/vencord-installer         --install         --location "$HOME/.config/discord"
 
     if [ ! -s "$resources/_app.asar" ]; then
         echo "Vencord installer completed, but _app.asar was not created."
@@ -209,8 +203,7 @@ run_clean_bootstrap_if_needed() {
     echo "Running Discord unmodified until splashScreen.pageReady..."
     : > /tmp/discord-bootstrap.log
 
-    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}" \
-        > /tmp/discord-bootstrap.log 2>&1 &
+    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}"         > /tmp/discord-bootstrap.log 2>&1 &
 
     if ! wait_for_discord_bootstrap; then
         echo "Discord bootstrap failed."
@@ -237,22 +230,12 @@ run_clean_bootstrap_if_needed() {
 mkdir -p "$HOME/.vnc" "$VENCORD_USER_DATA_DIR"
 
 echo "Creating VNC credentials..."
-printf '%s\n' "$VNC_PASSWORD" | tigervncpasswd -f > "$HOME/.vnc/passwd"
+printf '%s
+' "$VNC_PASSWORD" | tigervncpasswd -f > "$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
 
 echo "Starting TigerVNC desktop on port 5900..."
-Xtigervnc :1 \
-    -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}" \
-    -depth "$SCREEN_DEPTH" \
-    -rfbport 5900 \
-    -SecurityTypes VncAuth \
-    -PasswordFile "$HOME/.vnc/passwd" \
-    -AlwaysShared \
-    -AcceptSetDesktopSize \
-    -FrameRate "$VNC_FRAME_RATE" \
-    -localhost no \
-    -nolisten tcp \
-    -desktop "Discord Remote Client" &
+Xtigervnc :1     -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}"     -depth "$SCREEN_DEPTH"     -rfbport 5900     -SecurityTypes VncAuth     -PasswordFile "$HOME/.vnc/passwd"     -AlwaysShared     -AcceptSetDesktopSize     -FrameRate "$VNC_FRAME_RATE"     -localhost no     -nolisten tcp     -desktop "Discord Remote Client" &
 VNC_PID=$!
 
 for _ in $(seq 1 30); do
@@ -295,7 +278,7 @@ if ! ensure_vencord; then
     exit 1
 fi
 
-echo "Starting supervised Discord session with Electron GPU disabled..."
+echo "Starting supervised Discord session with renderer backgrounding disabled..."
 
 while true; do
     if ! ensure_vencord; then
