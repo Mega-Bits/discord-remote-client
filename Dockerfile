@@ -45,28 +45,27 @@ RUN set -eux; \
     test -n "$DISCORD_BIN"; \
     test -x "$DISCORD_BIN"; \
     DISCORD_TARGET="$(readlink -f "$DISCORD_BIN")"; \
-    DISCORD_DIR="$(dpkg -L discord | while IFS= read -r path; do \
-      if [ "$(basename "$path")" = "resources" ] && [ -d "$path" ]; then \
-        dirname "$path"; \
-        break; \
-      fi; \
-    done)"; \
-    if [ -z "$DISCORD_DIR" ] || [ ! -d "$DISCORD_DIR/resources" ]; then \
-      DISCORD_DIR="$(find /usr/share /opt \
-        -type d -name resources \
-        -path '*/discord/resources' \
+    APP_ASAR="$(dpkg -L discord 2>/dev/null | grep '/resources/app\.asar$' | head -n 1 || true)"; \
+    if [ -z "$APP_ASAR" ] || [ ! -f "$APP_ASAR" ]; then \
+      APP_ASAR="$(find /usr/share /opt \
+        -type f \
+        -path '*/resources/app.asar' \
         -print -quit \
-        2>/dev/null \
-        | sed 's#/resources$##')"; \
+        2>/dev/null || true)"; \
     fi; \
-    if [ -z "$DISCORD_DIR" ] || [ ! -d "$DISCORD_DIR/resources" ]; then \
-      echo "Could not determine Discord installation directory"; \
+    if [ -z "$APP_ASAR" ] || [ ! -f "$APP_ASAR" ]; then \
+      echo "Could not locate Discord resources/app.asar"; \
+      echo "Discord launcher: $DISCORD_BIN"; \
+      echo "Discord launcher target: $DISCORD_TARGET"; \
       echo "Discord package contents:"; \
       dpkg -L discord || true; \
       exit 1; \
     fi; \
+    DISCORD_DIR="$(dirname "$(dirname "$APP_ASAR")")"; \
+    test -d "$DISCORD_DIR/resources"; \
     echo "Discord launcher: $DISCORD_BIN"; \
     echo "Discord launcher target: $DISCORD_TARGET"; \
+    echo "Discord app.asar: $APP_ASAR"; \
     echo "Discord install directory: $DISCORD_DIR"; \
     mkdir -p /opt/vencord; \
     curl -fL \
