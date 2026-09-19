@@ -2,16 +2,21 @@
 
 Lightweight Docker image for running the official Discord Linux client with Vencord on a virtual X11 desktop and controlling it remotely over VNC.
 
-## Included
+## How it works
 
-- Pinned Discord Linux client package
-- Vencord
-- Xvfb virtual display
-- Openbox window manager
-- x11vnc
-- DBus
-- Persistent Discord/Vencord configuration
-- GitHub Actions build and publish to GHCR
+Discord's current Linux package is a bootstrapper. The Docker image installs that official `.deb`, but Vencord is deliberately **not** patched during the image build.
+
+On container startup:
+
+1. Xvfb, Openbox and x11vnc start.
+2. If Discord has not initialized its application files yet, Discord is started once so it can download them into `~/.config/discord/app-<version>/`.
+3. The bootstrap Discord process is stopped.
+4. Vencord patches the downloaded Discord application in `~/.config/discord`.
+5. Discord starts normally.
+
+Because `/home/discord/.config` is persisted, the downloaded Discord application, login state and Vencord data survive container restarts. If Discord downloads a new application version later, the next container restart patches that version as well.
+
+Vencord officially supports Discord's official Linux `.deb` package; Snap is not supported.
 
 ## Image
 
@@ -20,28 +25,6 @@ ghcr.io/mega-bits/discord-remote-client:latest
 ```
 
 The image is built for `linux/amd64`.
-
-## GitHub Actions build configuration
-
-The Docker build intentionally does not use Discord's moving Linux download endpoint. Configure these repository Actions secrets before running the workflow:
-
-| Secret | Description |
-| --- | --- |
-| `DISCORD_DEB_URL` | URL of a pinned Discord `.deb` artifact known to be compatible with Vencord |
-| `DISCORD_DEB_SHA256` | SHA256 checksum of that exact `.deb` file |
-
-The image build validates the checksum before installing the package and then verifies that the installed Discord package contains a `resources/app.asar` file before applying Vencord.
-
-If either secret is missing, the build fails intentionally instead of silently pulling a different Discord package.
-
-For a local build, pass the same values as build arguments:
-
-```bash
-docker build \
-  --build-arg DISCORD_DEB_URL="https://example.invalid/discord.deb" \
-  --build-arg DISCORD_DEB_SHA256="<sha256>" \
-  -t discord-remote-client .
-```
 
 ## Portainer / Docker Compose
 
@@ -54,8 +37,11 @@ VNC_PASSWORD=change-me
 Then deploy:
 
 ```bash
+docker compose pull
 docker compose up -d
 ```
+
+The first start can take longer because Discord downloads its actual application files before Vencord is patched.
 
 The default compose file publishes VNC only on the server loopback interface:
 
@@ -76,41 +62,35 @@ Then connect the VNC session to `127.0.0.1:5900`.
 
 ## Configuration
 
-Environment variables:
-
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TZ` | `Europe/Berlin` | Container timezone |
 | `SCREEN_WIDTH` | `1600` | Virtual screen width |
 | `SCREEN_HEIGHT` | `900` | Virtual screen height |
 | `SCREEN_DEPTH` | `24` | X11 color depth |
-| `VNC_PASSWORD` | required | VNC password |
+| `VNC_PASSWORD` | `changeme` | VNC password |
+| `DISCORD_BOOTSTRAP_TIMEOUT` | `300` | Seconds to wait for Discord's first-run download |
 
-Discord data is persisted in the `discord_config` Docker volume.
+Discord and Vencord data are persisted in the `discord_config` Docker volume.
 
-## Updating Discord
+## Updating
 
-Discord is pinned at build time. To update it:
+The GitHub Action rebuilds and publishes the image whenever `main` changes.
 
-1. Choose the new Discord `.deb` artifact.
-2. Verify that it is compatible with Vencord.
-3. Update `DISCORD_DEB_URL` and `DISCORD_DEB_SHA256` in the repository Actions secrets.
-4. Run the Docker workflow again.
-
-The build will reject a package whose checksum does not match or which does not expose the expected `resources/app.asar` layout.
-
-## Updating the container
-
-After a successful image build:
+To update the container:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
+If Discord has downloaded a new internal application version, restarting the container lets the entrypoint detect and patch the newest version with Vencord.
+
 ## Security
 
-VNC authentication is not a substitute for transport encryption. Keep port 5900 bound to localhost and access it through SSH, WireGuard, Tailscale, or another trusted private network.
+VNC authentication is not transport encryption. Keep port 5900 bound to localhost and access it through SSH, WireGuard, Tailscale, or another trusted private network.
+
+Classic VNC authentication effectively uses only the first eight password characters, so the SSH/VPN layer is the important security boundary.
 
 ## Vencord
 
