@@ -4,9 +4,11 @@ set -euo pipefail
 export HOME=/home/discord
 export DISPLAY=:1
 export XDG_RUNTIME_DIR=/tmp/runtime-discord
+export XDG_SESSION_TYPE=x11
 export VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
+unset WAYLAND_DISPLAY
 
 SCREEN_WIDTH="${SCREEN_WIDTH:-1920}"
 SCREEN_HEIGHT="${SCREEN_HEIGHT:-1080}"
@@ -16,6 +18,12 @@ VNC_FRAME_RATE="${VNC_FRAME_RATE:-60}"
 DISCORD_BOOTSTRAP_TIMEOUT="${DISCORD_BOOTSTRAP_TIMEOUT:-300}"
 DISCORD_BOOTSTRAP_GRACE_SECONDS="${DISCORD_BOOTSTRAP_GRACE_SECONDS:-45}"
 DISCORD_RESTART_DELAY="${DISCORD_RESTART_DELAY:-2}"
+
+DISCORD_FLAGS=(
+    --no-sandbox
+    --disable-gpu
+    --ozone-platform=x11
+)
 
 if [ "$(id -u)" = "0" ]; then
     echo "Preparing Discord container..."
@@ -195,7 +203,7 @@ run_clean_bootstrap_if_needed() {
     echo "Running Discord unmodified until first-run initialization is fully complete..."
     : > /tmp/discord-bootstrap.log
 
-    dbus-run-session -- /usr/bin/discord --no-sandbox \
+    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}" \
         > /tmp/discord-bootstrap.log 2>&1 &
 
     if ! wait_for_discord_bootstrap; then
@@ -282,7 +290,7 @@ if ! ensure_vencord; then
     exit 1
 fi
 
-echo "Starting supervised Discord session..."
+echo "Starting supervised Discord session with Electron GPU disabled..."
 
 while true; do
     if ! ensure_vencord; then
@@ -292,7 +300,7 @@ while true; do
     fi
 
     set +e
-    dbus-run-session -- /usr/bin/discord --no-sandbox
+    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}"
     EXIT_CODE=$?
     set -e
 
