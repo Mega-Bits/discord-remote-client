@@ -17,19 +17,21 @@ Docker image for running the official Discord Linux client with Vencord in a lig
 
 Discord's Linux package bootstraps the actual application into the user profile. Vencord is patched only after Discord has completed a clean, unmodified first start.
 
+The important readiness signal is Discord's own `splashScreen.pageReady` / `APP_ASYNC_INDEX_TSX_LOADED` event. Merely creating the Electron window or firing `webContents.did-finish-load` is not treated as ready.
+
 For every new Discord `app-<version>`:
 
 1. TigerVNC and Openbox start.
-2. If that Discord version has not completed bootstrap yet, an existing Vencord patch is temporarily removed.
+2. If that Discord version has not reached the verified page-ready state yet, an existing Vencord patch is temporarily removed.
 3. Discord starts unmodified.
-4. The container waits until the main Discord renderer has finished loading.
-5. Discord gets an additional grace period (45 seconds by default) to finish modules, updater work and first-run setup.
-6. A per-version bootstrap marker is written.
+4. The container waits up to 600 seconds for Discord's real page-ready event.
+5. Discord gets a short additional grace period.
+6. A per-version `.bootstrap-ready-app-<version>` marker is written.
 7. Discord is stopped cleanly.
 8. Vencord patches Discord and the resulting `_app.asar` is verified.
 9. Discord starts under a supervisor.
 
-This also repairs older persistent volumes that were patched too early: if no bootstrap-complete marker exists for the current Discord version, Vencord is temporarily unpatched and the clean bootstrap is run once again.
+Older `.bootstrap-complete-*` markers are intentionally ignored because they were created from the weaker Electron window-load check.
 
 ## Discord cannot stay closed
 
@@ -87,8 +89,8 @@ Use an SSH tunnel in Remote Desktop Manager and connect the VNC session to `127.
 | `SCREEN_DEPTH` | `24` | X11 color depth |
 | `VNC_FRAME_RATE` | `60` | Maximum VNC update frame rate |
 | `VNC_PASSWORD` | `changeme` | VNC authentication password |
-| `DISCORD_BOOTSTRAP_TIMEOUT` | `300` | Maximum seconds to wait for Discord's main renderer during first-run bootstrap |
-| `DISCORD_BOOTSTRAP_GRACE_SECONDS` | `45` | Extra time after the main renderer loads before Discord is stopped and patched |
+| `DISCORD_BOOTSTRAP_TIMEOUT` | `600` | Maximum seconds to wait for Discord's real page-ready state |
+| `DISCORD_BOOTSTRAP_GRACE_SECONDS` | `15` | Extra time after pageReady before Discord is stopped and patched |
 | `DISCORD_RESTART_DELAY` | `2` | Delay before Discord is restarted after being closed |
 
 Discord, login state, bootstrap markers and Vencord data are persisted in the `discord_config` volume.

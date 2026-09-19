@@ -15,8 +15,8 @@ SCREEN_HEIGHT="${SCREEN_HEIGHT:-1080}"
 SCREEN_DEPTH="${SCREEN_DEPTH:-24}"
 VNC_PASSWORD="${VNC_PASSWORD:-changeme}"
 VNC_FRAME_RATE="${VNC_FRAME_RATE:-60}"
-DISCORD_BOOTSTRAP_TIMEOUT="${DISCORD_BOOTSTRAP_TIMEOUT:-300}"
-DISCORD_BOOTSTRAP_GRACE_SECONDS="${DISCORD_BOOTSTRAP_GRACE_SECONDS:-45}"
+DISCORD_BOOTSTRAP_TIMEOUT="${DISCORD_BOOTSTRAP_TIMEOUT:-600}"
+DISCORD_BOOTSTRAP_GRACE_SECONDS="${DISCORD_BOOTSTRAP_GRACE_SECONDS:-15}"
 DISCORD_RESTART_DELAY="${DISCORD_RESTART_DELAY:-2}"
 
 DISCORD_FLAGS=(
@@ -79,7 +79,7 @@ bootstrap_marker_for_app() {
 
     app_dir="$(dirname "$(dirname "$app_asar")")"
     app_name="$(basename "$app_dir")"
-    printf '%s/.bootstrap-complete-%s\n' "$HOME/.config/discord" "$app_name"
+    printf '%s/.bootstrap-ready-%s\n' "$HOME/.config/discord" "$app_name"
 }
 
 stop_discord() {
@@ -107,7 +107,7 @@ unpatch_vencord_for_bootstrap() {
         return 0
     fi
 
-    echo "Existing Vencord patch found before completed bootstrap. Temporarily unpatching Discord..."
+    echo "Existing Vencord patch found before verified Discord bootstrap. Temporarily unpatching Discord..."
     /usr/local/bin/vencord-installer \
         --uninstall \
         --location "$HOME/.config/discord"
@@ -128,18 +128,24 @@ wait_for_discord_bootstrap() {
         app_asar="$(find_discord_app_asar || true)"
 
         if [ -n "$app_asar" ] && [ -s "$app_asar" ]; then
-            if grep -qE 'webContents\.did-finish-load web2|renderer-full-interactive|Startup timing:' /tmp/discord-bootstrap.log 2>/dev/null; then
-                echo "Discord main renderer has finished loading."
-                echo "Giving Discord ${DISCORD_BOOTSTRAP_GRACE_SECONDS}s to finish modules, updater and first-run setup..."
+            if grep -qE 'splashScreen\.pageReady|APP_ASYNC_INDEX_TSX_LOADED' /tmp/discord-bootstrap.log 2>/dev/null; then
+                echo "Discord reached pageReady."
+                echo "Giving Discord ${DISCORD_BOOTSTRAP_GRACE_SECONDS}s to finish remaining first-run work..."
                 sleep "$DISCORD_BOOTSTRAP_GRACE_SECONDS"
                 return 0
             fi
+        fi
+
+        if ! pgrep -u "$(id -u)" -f '/usr/bin/discord|/home/discord/.config/discord/app-' >/dev/null 2>&1; then
+            echo "Discord exited before reaching pageReady."
+            return 1
         fi
 
         sleep 1
         elapsed=$((elapsed + 1))
     done
 
+    echo "Discord did not reach pageReady within ${DISCORD_BOOTSTRAP_TIMEOUT}s."
     return 1
 }
 
@@ -191,7 +197,7 @@ run_clean_bootstrap_if_needed() {
     if [ -n "$app_asar" ]; then
         marker="$(bootstrap_marker_for_app "$app_asar")"
         if [ -f "$marker" ]; then
-            echo "Discord bootstrap already completed for $(basename "$(dirname "$(dirname "$app_asar")")")."
+            echo "Discord pageReady bootstrap already completed for $(basename "$(dirname "$(dirname "$app_asar")")")."
             return 0
         fi
     fi
@@ -200,14 +206,14 @@ run_clean_bootstrap_if_needed() {
         return 1
     fi
 
-    echo "Running Discord unmodified until first-run initialization is fully complete..."
+    echo "Running Discord unmodified until splashScreen.pageReady..."
     : > /tmp/discord-bootstrap.log
 
     dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}" \
         > /tmp/discord-bootstrap.log 2>&1 &
 
     if ! wait_for_discord_bootstrap; then
-        echo "Discord did not finish first-run initialization within ${DISCORD_BOOTSTRAP_TIMEOUT}s."
+        echo "Discord bootstrap failed."
         echo "Bootstrap log:"
         cat /tmp/discord-bootstrap.log || true
         return 1
@@ -215,14 +221,14 @@ run_clean_bootstrap_if_needed() {
 
     app_asar="$(find_discord_app_asar || true)"
     if [ -z "$app_asar" ] || [ ! -s "$app_asar" ]; then
-        echo "Discord finished bootstrap but app.asar could not be found."
+        echo "Discord reached pageReady but app.asar could not be found."
         return 1
     fi
 
     marker="$(bootstrap_marker_for_app "$app_asar")"
     touch "$marker"
 
-    echo "Discord bootstrap marked complete: $marker"
+    echo "Discord pageReady bootstrap marked complete: $marker"
     echo "Stopping clean bootstrap instance before Vencord patch..."
     stop_discord
     sleep 3
@@ -281,7 +287,6 @@ MAXIMIZER_PID=$!
 sleep 1
 
 if ! run_clean_bootstrap_if_needed; then
-    echo "Discord bootstrap failed."
     exit 1
 fi
 
