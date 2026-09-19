@@ -27,27 +27,35 @@ RUN set -eux; \
     curl -fL "https://discord.com/api/download?platform=linux&format=deb" \
       -o /tmp/discord.deb; \
     apt-get update; \
-    apt-get install -y /tmp/discord.deb; \
+    apt-get install -y --no-install-recommends /tmp/discord.deb; \
     rm -f /tmp/discord.deb; \
-    rm -rf /var/lib/apt/lists/*; \
-    DISCORD_BIN="$(find -L /usr/share/discord \
-      -maxdepth 3 \
-      -type f \
-      -perm /111 \
-      \( -name Discord -o -name discord \) \
-      -print -quit)"; \
-    test -n "$DISCORD_BIN"; \
-    echo "Discord executable: $DISCORD_BIN"
+    DISCORD_BIN="$(command -v discord || true)"; \
+    if [ -z "$DISCORD_BIN" ]; then \
+      echo "Discord executable was not installed"; \
+      dpkg -L discord || true; \
+      exit 1; \
+    fi; \
+    test -x "$DISCORD_BIN"; \
+    echo "Discord launcher: $DISCORD_BIN"; \
+    echo "Discord launcher target: $(readlink -f "$DISCORD_BIN")"; \
+    rm -rf /var/lib/apt/lists/*
 
 RUN set -eux; \
-    DISCORD_BIN="$(find -L /usr/share/discord \
-      -maxdepth 3 \
-      -type f \
-      -perm /111 \
-      \( -name Discord -o -name discord \) \
-      -print -quit)"; \
+    DISCORD_BIN="$(command -v discord || true)"; \
     test -n "$DISCORD_BIN"; \
-    DISCORD_DIR="$(dirname "$DISCORD_BIN")"; \
+    test -x "$DISCORD_BIN"; \
+    DISCORD_DIR="$(dpkg -L discord | while IFS= read -r path; do \
+      if [ -d "$path/resources" ]; then \
+        printf '%s\n' "$path"; \
+        break; \
+      fi; \
+    done)"; \
+    if [ -z "$DISCORD_DIR" ]; then \
+      echo "Could not determine Discord installation directory"; \
+      echo "Discord package contents:"; \
+      dpkg -L discord || true; \
+      exit 1; \
+    fi; \
     echo "Discord install directory: $DISCORD_DIR"; \
     mkdir -p /opt/vencord; \
     curl -fL \
