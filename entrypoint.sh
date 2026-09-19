@@ -6,6 +6,7 @@ export DISPLAY=:1
 export XDG_RUNTIME_DIR=/tmp/runtime-discord
 export XDG_SESSION_TYPE=x11
 export VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
+export VENCORD_DEV_INSTALL=1
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 unset WAYLAND_DISPLAY
@@ -54,6 +55,17 @@ fi
 VNC_PID=""
 OPENBOX_PID=""
 MAXIMIZER_PID=""
+
+prepare_vencord_dist() {
+    echo "Installing headless Vencord runtime files..."
+    rm -rf "$VENCORD_USER_DATA_DIR/dist"
+    mkdir -p "$VENCORD_USER_DATA_DIR/dist"
+    cp -a /usr/local/share/vencord-dist/. "$VENCORD_USER_DATA_DIR/dist/"
+
+    if [ -f "$VENCORD_USER_DATA_DIR/dist/HEADLESS_BUILD_REF" ]; then
+        echo "Vencord headless build: $(cat "$VENCORD_USER_DATA_DIR/dist/HEADLESS_BUILD_REF")"
+    fi
+}
 
 cleanup() {
     trap - TERM INT
@@ -228,6 +240,7 @@ run_clean_bootstrap_if_needed() {
 }
 
 mkdir -p "$HOME/.vnc" "$VENCORD_USER_DATA_DIR"
+prepare_vencord_dist
 
 echo "Creating VNC credentials..."
 printf '%s

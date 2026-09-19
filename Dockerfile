@@ -1,9 +1,51 @@
+FROM node:22-bookworm-slim AS vencord-build
+
+ARG VENCORD_REF=59a54286542651fff5ea53f0ce6cadf2a6aa7521
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm@11.9.0
+
+RUN git clone https://github.com/Vendicated/Vencord.git /src \
+    && cd /src \
+    && git checkout "$VENCORD_REF"
+
+WORKDIR /src
+
+# Headless/VNC workaround:
+# Discord reaches pageReady without Vencord, but the renderer stalls immediately
+# after NoTrack intentionally aborts Sentry. Keep the rest of Vencord intact and
+# make only NoTrack.start() a no-op.
+RUN node <<'NODE'
+const fs = require("fs");
+const path = "src/plugins/_core/noTrack.ts";
+let source = fs.readFileSync(path, "utf8");
+const pattern = /    start\(\) \{[\s\S]*?\n    \},\n\n    analyticsTrackingStoreMaker\(\) \{/;
+if (!pattern.test(source)) {
+    throw new Error("Could not locate NoTrack.start() block");
+}
+source = source.replace(
+    pattern,
+    "    start() { },\n\n    analyticsTrackingStoreMaker() {"
+);
+fs.writeFileSync(path, source);
+NODE
+
+RUN pnpm install --frozen-lockfile \
+    && pnpm build \
+    && printf '%s\n' "$VENCORD_REF" > dist/HEADLESS_BUILD_REF
+
+
 FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/discord
 ENV DISPLAY=:1
 ENV VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
+ENV VENCORD_DEV_INSTALL=1
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
 
@@ -48,9 +90,11 @@ RUN set -eux; \
       -o /usr/local/bin/vencord-installer; \
     chmod 755 /usr/local/bin/vencord-installer
 
+COPY --from=vencord-build /src/dist /usr/local/share/vencord-dist
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chown root:root /usr/local/bin/entrypoint.sh \
+RUN chown -R root:root /usr/local/share/vencord-dist \
+    && chown root:root /usr/local/bin/entrypoint.sh \
     && chmod 755 /usr/local/bin/entrypoint.sh
 
 EXPOSE 5900
