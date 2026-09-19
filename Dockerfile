@@ -4,6 +4,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/discord
 ENV DISPLAY=:1
 ENV VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV GALLIUM_DRIVER=llvmpipe
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -19,6 +21,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     tini \
     procps \
+    libgl1-mesa-dri \
+    libegl-mesa0 \
+    mesa-utils \
     fonts-liberation \
     fonts-noto-color-emoji \
     tzdata \
