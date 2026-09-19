@@ -1,22 +1,50 @@
 # Discord Remote Client
 
-Lightweight Docker image for running the official Discord Linux client with Vencord on a virtual X11 desktop and controlling it remotely over VNC.
+Docker image for running the official Discord Linux client with Vencord in a lightweight remote desktop that is reachable over VNC.
 
-## How it works
+## Included
 
-Discord's current Linux package is a bootstrapper. The Docker image installs that official `.deb`, but Vencord is deliberately **not** patched during the image build.
+- Official Discord Linux `.deb`
+- Vencord
+- TigerVNC / Xtigervnc
+- Openbox
+- DBus
+- Persistent Discord/Vencord profile
+- GitHub Actions image build for GHCR
 
-On container startup:
+## How startup works
 
-1. Xvfb, Openbox and x11vnc start.
-2. If Discord has not initialized its application files yet, Discord is started once so it can download them into `~/.config/discord/app-<version>/`.
-3. The bootstrap Discord process is stopped.
-4. Vencord patches the downloaded Discord application in `~/.config/discord`.
-5. Discord starts normally.
+The current Discord Linux package may bootstrap/update the actual application into the user profile. The container therefore patches Vencord at runtime, after Discord has finished creating its `~/.config/discord/app-*/resources` directory.
 
-Because `/home/discord/.config` is persisted, the downloaded Discord application, login state and Vencord data survive container restarts. If Discord downloads a new application version later, the next container restart patches that version as well.
+On first startup:
 
-Vencord officially supports Discord's official Linux `.deb` package; Snap is not supported.
+1. TigerVNC and Openbox start.
+2. Discord starts once and initializes/downloads its application files.
+3. The container waits until the downloaded application directory has stopped changing for a short period.
+4. Discord is cleanly stopped.
+5. The official Vencord CLI patches the stable Discord install using its native Linux auto-discovery.
+6. Discord starts again under a supervisor.
+
+The Vencord installer itself supports the `~/.config/discord/app-*` layout, so the container does not try to guess an `app.asar` path.
+
+## Discord cannot stay closed
+
+Discord runs under a supervisor loop. If a user closes the Discord window and the process exits, it is automatically started again after a short delay.
+
+The window is also automatically maximized whenever it appears.
+
+## Resolution and Remote Desktop Manager
+
+TigerVNC accepts VNC `SetDesktopSize` requests. If the VNC viewer used by Remote Desktop Manager sends remote-resize requests, the actual remote desktop resolution can follow the client window/monitor size rather than merely scaling a fixed framebuffer.
+
+The initial/fallback resolution is controlled with:
+
+```env
+SCREEN_WIDTH=1920
+SCREEN_HEIGHT=1080
+```
+
+A VNC server cannot discover the local monitor resolution on its own. The VNC client must send a desktop-resize request. If the RDM VNC viewer only offers Smart Sizing, it scales the image to the RDM window but does not change the remote framebuffer resolution. In that case either set `SCREEN_WIDTH`/`SCREEN_HEIGHT` to the monitor's native resolution or use a VNC viewer in RDM that supports remote resize.
 
 ## Image
 
@@ -24,7 +52,7 @@ Vencord officially supports Discord's official Linux `.deb` package; Snap is not
 ghcr.io/mega-bits/discord-remote-client:latest
 ```
 
-The image is built for `linux/amd64`.
+The image is currently built for `linux/amd64`.
 
 ## Portainer / Docker Compose
 
@@ -41,20 +69,16 @@ docker compose pull
 docker compose up -d
 ```
 
-The first start can take longer because Discord downloads its actual application files before Vencord is patched.
-
-The default compose file publishes VNC only on the server loopback interface:
+The default Compose file publishes VNC only on the server loopback interface:
 
 ```text
 127.0.0.1:5900
 ```
 
-Use an SSH tunnel in Remote Desktop Manager to reach the VNC service. Do not expose plain VNC directly to the public internet.
-
-Example SSH tunnel:
+Use an SSH tunnel in Remote Desktop Manager:
 
 ```text
-Local: 127.0.0.1:5900
+Local:  127.0.0.1:5900
 Remote: 127.0.0.1:5900
 ```
 
@@ -65,32 +89,22 @@ Then connect the VNC session to `127.0.0.1:5900`.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `TZ` | `Europe/Berlin` | Container timezone |
-| `SCREEN_WIDTH` | `1600` | Virtual screen width |
-| `SCREEN_HEIGHT` | `900` | Virtual screen height |
+| `SCREEN_WIDTH` | `1920` | Initial/fallback VNC desktop width |
+| `SCREEN_HEIGHT` | `1080` | Initial/fallback VNC desktop height |
 | `SCREEN_DEPTH` | `24` | X11 color depth |
-| `VNC_PASSWORD` | `changeme` | VNC password |
-| `DISCORD_BOOTSTRAP_TIMEOUT` | `300` | Seconds to wait for Discord's first-run download |
+| `VNC_FRAME_RATE` | `60` | Maximum VNC update frame rate |
+| `VNC_PASSWORD` | `changeme` | VNC authentication password |
+| `DISCORD_BOOTSTRAP_TIMEOUT` | `300` | Maximum seconds for first-run Discord initialization |
+| `DISCORD_BOOTSTRAP_STABLE_SECONDS` | `12` | Seconds the downloaded app directory must remain unchanged |
+| `DISCORD_RESTART_DELAY` | `2` | Delay before Discord is restarted after being closed |
 
-Discord and Vencord data are persisted in the `discord_config` Docker volume.
-
-## Updating
-
-The GitHub Action rebuilds and publishes the image whenever `main` changes.
-
-To update the container:
-
-```bash
-docker compose pull
-docker compose up -d
-```
-
-If Discord has downloaded a new internal application version, restarting the container lets the entrypoint detect and patch the newest version with Vencord.
+Discord, login state and Vencord data are persisted in the `discord_config` volume.
 
 ## Security
 
-VNC authentication is not transport encryption. Keep port 5900 bound to localhost and access it through SSH, WireGuard, Tailscale, or another trusted private network.
+The Compose file binds VNC to `127.0.0.1` on the Docker host. Keep it that way and access it through SSH, WireGuard, Tailscale or another trusted tunnel.
 
-Classic VNC authentication effectively uses only the first eight password characters, so the SSH/VPN layer is the important security boundary.
+Classic VNC password authentication only uses the first eight password characters. The SSH/VPN layer should therefore be treated as the primary security boundary.
 
 ## Vencord
 

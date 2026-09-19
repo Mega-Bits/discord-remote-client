@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
     dbus-x11 \
     xauth \
-    xvfb \
-    x11vnc \
+    tigervnc-standalone-server \
+    tigervnc-tools \
     openbox \
+    wmctrl \
     gosu \
     tini \
     procps \
