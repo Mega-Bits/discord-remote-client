@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dbus \
     dbus-x11 \
     xauth \
+    x11-utils \
     tigervnc-standalone-server \
     tigervnc-tools \
     openbox \
