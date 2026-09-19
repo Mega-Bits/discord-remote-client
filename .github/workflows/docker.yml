@@ -18,6 +18,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Discord package configuration
+        env:
+          DISCORD_DEB_URL: ${{ secrets.DISCORD_DEB_URL }}
+          DISCORD_DEB_SHA256: ${{ secrets.DISCORD_DEB_SHA256 }}
+        run: |
+          test -n "$DISCORD_DEB_URL" || {
+            echo "::error::DISCORD_DEB_URL is not configured"
+            exit 1
+          }
+
+          [[ "$DISCORD_DEB_SHA256" =~ ^[0-9a-fA-F]{64}$ ]] || {
+            echo "::error::DISCORD_DEB_SHA256 must be a 64-character SHA-256 hash"
+            exit 1
+          }
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
