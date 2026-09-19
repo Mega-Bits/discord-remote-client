@@ -44,18 +44,14 @@ RUN set -eux; \
     DISCORD_BIN="$(command -v discord || true)"; \
     test -n "$DISCORD_BIN"; \
     test -x "$DISCORD_BIN"; \
-    DISCORD_DIR="$(dpkg -L discord | while IFS= read -r path; do \
-      if [ -d "$path/resources" ]; then \
-        printf '%s\n' "$path"; \
-        break; \
-      fi; \
-    done)"; \
-    if [ -z "$DISCORD_DIR" ]; then \
-      echo "Could not determine Discord installation directory"; \
-      echo "Discord package contents:"; \
-      dpkg -L discord || true; \
-      exit 1; \
+    DISCORD_TARGET="$(readlink -f "$DISCORD_BIN")"; \
+    DISCORD_DIR="$(dirname "$DISCORD_TARGET")"; \
+    if [ ! -d "$DISCORD_DIR/resources" ]; then \
+      DISCORD_DIR="$(dirname "$DISCORD_DIR")"; \
     fi; \
+    test -d "$DISCORD_DIR/resources"; \
+    echo "Discord launcher: $DISCORD_BIN"; \
+    echo "Discord launcher target: $DISCORD_TARGET"; \
     echo "Discord install directory: $DISCORD_DIR"; \
     mkdir -p /opt/vencord; \
     curl -fL \
