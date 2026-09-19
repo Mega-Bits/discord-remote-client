@@ -24,17 +24,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --create-home --uid 1000 --shell /bin/bash discord
 
 RUN set -eux; \
-    curl -fL "https://discord.com/api/download?platform=linux&format=deb" -o /tmp/discord.deb; \
+    curl -fL "https://discord.com/api/download?platform=linux&format=deb" \
+      -o /tmp/discord.deb; \
     apt-get update; \
     apt-get install -y /tmp/discord.deb; \
     rm -f /tmp/discord.deb; \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/*; \
+    DISCORD_BIN="$(find -L /usr/share/discord \
+      -maxdepth 3 \
+      -type f \
+      -perm /111 \
+      \( -name Discord -o -name discord \) \
+      -print -quit)"; \
+    test -n "$DISCORD_BIN"; \
+    echo "Discord executable: $DISCORD_BIN"
 
 RUN set -eux; \
-    echo "Discord launcher: $(command -v discord)"; \
-    readlink -f "$(command -v discord)"; \
-    dpkg -L discord | grep -E '/(Discord|discord)$' || true; \
-    test -x /usr/share/discord/Discord; \
+    DISCORD_BIN="$(find -L /usr/share/discord \
+      -maxdepth 3 \
+      -type f \
+      -perm /111 \
+      \( -name Discord -o -name discord \) \
+      -print -quit)"; \
+    test -n "$DISCORD_BIN"; \
+    DISCORD_DIR="$(dirname "$DISCORD_BIN")"; \
+    echo "Discord install directory: $DISCORD_DIR"; \
     mkdir -p /opt/vencord; \
     curl -fL \
       "https://github.com/Vencord/Installer/releases/latest/download/VencordInstallerCli-linux" \
@@ -43,7 +57,7 @@ RUN set -eux; \
     SUDO_USER=discord \
     HOME=/home/discord \
     VENCORD_USER_DATA_DIR=/opt/vencord \
-      /tmp/vencord-installer --install --location /usr/share/discord; \
+      /tmp/vencord-installer --install --location "$DISCORD_DIR"; \
     chown -R discord:discord /opt/vencord; \
     rm -f /tmp/vencord-installer
 
