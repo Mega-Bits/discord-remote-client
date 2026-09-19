@@ -5,6 +5,8 @@ export HOME=/home/discord
 export DISPLAY=:1
 export XDG_RUNTIME_DIR=/tmp/runtime-discord
 export VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
+export LIBGL_ALWAYS_SOFTWARE=1
+export GALLIUM_DRIVER=llvmpipe
 
 SCREEN_WIDTH="${SCREEN_WIDTH:-1920}"
 SCREEN_HEIGHT="${SCREEN_HEIGHT:-1080}"
@@ -187,8 +189,7 @@ if ! DISPLAY=:1 xdpyinfo >/dev/null 2>&1; then
     exit 1
 fi
 
-echo "Starting Openbox..."
-openbox --sm-disable &
+echo "Software renderer:"\nglxinfo -B 2>/dev/null | grep -E "OpenGL vendor|OpenGL renderer|OpenGL version" || true\n\necho "Starting Openbox..."\nopenbox --sm-disable &
 OPENBOX_PID=$!
 
 maximize_discord_forever &
@@ -202,7 +203,7 @@ if [ -z "$RESOURCES_DIR" ]; then
     echo "First start: letting Discord download and initialize its application files..."
     : > /tmp/discord-bootstrap.log
 
-    dbus-run-session -- /usr/bin/discord --no-sandbox --disable-gpu \
+    dbus-run-session -- /usr/bin/discord --no-sandbox \\
         > /tmp/discord-bootstrap.log 2>&1 &
 
     if ! wait_for_discord_bootstrap; then
@@ -233,8 +234,7 @@ while true; do
 
     set +e
     dbus-run-session -- /usr/bin/discord \
-        --no-sandbox \
-        --disable-gpu
+        --no-sandbox
     EXIT_CODE=$?
     set -e
 
