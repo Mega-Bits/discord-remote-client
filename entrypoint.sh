@@ -215,9 +215,11 @@ run_clean_bootstrap_if_needed() {
     fi
 
     echo "Running Discord unmodified until splashScreen.pageReady..."
+    echo "Bootstrap timeout: ${DISCORD_BOOTSTRAP_TIMEOUT}s"
     : > /tmp/discord-bootstrap.log
 
-    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}"         > /tmp/discord-bootstrap.log 2>&1 &
+    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}" \
+        > >(tee /tmp/discord-bootstrap.log) 2>&1 &
 
     if ! wait_for_discord_bootstrap; then
         echo "Discord bootstrap failed."
