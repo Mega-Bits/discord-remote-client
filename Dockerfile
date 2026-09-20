@@ -29,7 +29,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     procps \
     passwd \
-    chromium \
     pipewire \
     pipewire-bin \
     pipewire-pulse \
@@ -60,7 +59,6 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends /tmp/vesktop.deb; \
     rm -f /tmp/vesktop.deb; \
     command -v vesktop; \
-    command -v chromium; \
     VESKTOP_BIN="$(readlink -f "$(command -v vesktop)")"; \
     echo "Checking Vesktop runtime libraries: $VESKTOP_BIN"; \
     ldd "$VESKTOP_BIN"; \
