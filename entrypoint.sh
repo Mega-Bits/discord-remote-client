@@ -5,8 +5,7 @@ export HOME=/home/discord
 export DISPLAY=:1
 export XDG_RUNTIME_DIR=/tmp/runtime-discord
 export XDG_SESSION_TYPE=x11
-export VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
-export VENCORD_DEV_INSTALL=1
+export ELECTRON_OZONE_PLATFORM_HINT=x11
 export LIBGL_ALWAYS_SOFTWARE=1
 export GALLIUM_DRIVER=llvmpipe
 unset WAYLAND_DISPLAY
@@ -16,11 +15,9 @@ SCREEN_HEIGHT="${SCREEN_HEIGHT:-1080}"
 SCREEN_DEPTH="${SCREEN_DEPTH:-24}"
 VNC_PASSWORD="${VNC_PASSWORD:-changeme}"
 VNC_FRAME_RATE="${VNC_FRAME_RATE:-60}"
-DISCORD_BOOTSTRAP_TIMEOUT="${DISCORD_BOOTSTRAP_TIMEOUT:-600}"
-DISCORD_BOOTSTRAP_GRACE_SECONDS="${DISCORD_BOOTSTRAP_GRACE_SECONDS:-15}"
-DISCORD_RESTART_DELAY="${DISCORD_RESTART_DELAY:-2}"
+VESKTOP_RESTART_DELAY="${VESKTOP_RESTART_DELAY:-2}"
 
-DISCORD_FLAGS=(
+VESKTOP_FLAGS=(
     --no-sandbox
     --ozone-platform=x11
     --use-gl=angle
@@ -32,7 +29,7 @@ DISCORD_FLAGS=(
 )
 
 if [ "$(id -u)" = "0" ]; then
-    echo "Preparing Discord container..."
+    echo "Preparing Vesktop container..."
 
     mkdir -p /home/discord/.config /home/discord/.vnc
     chown -R discord:discord /home/discord
@@ -58,201 +55,45 @@ VNC_PID=""
 OPENBOX_PID=""
 MAXIMIZER_PID=""
 
-prepare_vencord_dist() {
-    echo "Installing headless Vencord runtime files..."
-    rm -rf "$VENCORD_USER_DATA_DIR/dist"
-    mkdir -p "$VENCORD_USER_DATA_DIR/dist"
-    cp -a /usr/local/share/vencord-dist/. "$VENCORD_USER_DATA_DIR/dist/"
-
-    if [ -f "$VENCORD_USER_DATA_DIR/dist/HEADLESS_BUILD_REF" ]; then
-        echo "Vencord headless build: $(cat "$VENCORD_USER_DATA_DIR/dist/HEADLESS_BUILD_REF")"
-    fi
-}
-
 cleanup() {
     trap - TERM INT
-    echo "Stopping Discord remote client..."
-    pkill -TERM -u "$(id -u)" -f '/usr/bin/discord|/home/discord/.config/discord/app-' 2>/dev/null || true
+    echo "Stopping Vesktop remote client..."
+    pkill -TERM -u "$(id -u)" -f '/usr/bin/vesktop|/opt/Vesktop/vesktop|vesktop' 2>/dev/null || true
     [ -z "$MAXIMIZER_PID" ] || kill "$MAXIMIZER_PID" 2>/dev/null || true
     [ -z "$OPENBOX_PID" ] || kill "$OPENBOX_PID" 2>/dev/null || true
     [ -z "$VNC_PID" ] || kill "$VNC_PID" 2>/dev/null || true
 }
 trap cleanup TERM INT EXIT
 
-find_discord_app_asar() {
-    find "$HOME/.config/discord"         -maxdepth 4         -type f         -path "$HOME/.config/discord/app-*/resources/app.asar"         -print 2>/dev/null         | sort -V         | tail -n 1
-}
-
-bootstrap_marker_for_app() {
-    local app_asar="$1"
-    local app_dir
-    local app_name
-
-    app_dir="$(dirname "$(dirname "$app_asar")")"
-    app_name="$(basename "$app_dir")"
-    printf '%s/.bootstrap-ready-%s
-' "$HOME/.config/discord" "$app_name"
-}
-
-stop_discord() {
-    pkill -TERM -u "$(id -u)" -f '/usr/bin/discord|/home/discord/.config/discord/app-' 2>/dev/null || true
-
-    for _ in $(seq 1 15); do
-        if ! pgrep -u "$(id -u)" -f '/usr/bin/discord|/home/discord/.config/discord/app-' >/dev/null 2>&1; then
-            return 0
-        fi
-        sleep 1
-    done
-
-    pkill -KILL -u "$(id -u)" -f '/usr/bin/discord|/home/discord/.config/discord/app-' 2>/dev/null || true
-}
-
-unpatch_vencord_for_bootstrap() {
-    local app_asar
-    local resources
-
-    app_asar="$(find_discord_app_asar || true)"
-    [ -n "$app_asar" ] || return 0
-
-    resources="$(dirname "$app_asar")"
-    if [ ! -s "$resources/_app.asar" ]; then
-        return 0
-    fi
-
-    echo "Existing Vencord patch found before verified Discord bootstrap. Temporarily unpatching Discord..."
-    /usr/local/bin/vencord-installer         --uninstall         --location "$HOME/.config/discord"
-
-    if [ -e "$resources/_app.asar" ]; then
-        echo "Vencord unpatch did not restore the original Discord app."
-        return 1
-    fi
-
-    echo "Discord restored for clean first-run initialization."
-}
-
-wait_for_discord_bootstrap() {
-    local elapsed=0
-    local app_asar=""
-
-    while [ "$elapsed" -lt "$DISCORD_BOOTSTRAP_TIMEOUT" ]; do
-        app_asar="$(find_discord_app_asar || true)"
-
-        if [ -n "$app_asar" ] && [ -s "$app_asar" ]; then
-            if grep -qE 'splashScreen.pageReady|APP_ASYNC_INDEX_TSX_LOADED' /tmp/discord-bootstrap.log 2>/dev/null; then
-                echo "Discord reached pageReady."
-                echo "Giving Discord ${DISCORD_BOOTSTRAP_GRACE_SECONDS}s to finish remaining first-run work..."
-                sleep "$DISCORD_BOOTSTRAP_GRACE_SECONDS"
-                return 0
-            fi
-        fi
-
-        if ! pgrep -u "$(id -u)" -f '/usr/bin/discord|/home/discord/.config/discord/app-' >/dev/null 2>&1; then
-            echo "Discord exited before reaching pageReady."
-            return 1
-        fi
-
-        sleep 1
-        elapsed=$((elapsed + 1))
-    done
-
-    echo "Discord did not reach pageReady within ${DISCORD_BOOTSTRAP_TIMEOUT}s."
-    return 1
-}
-
-ensure_vencord() {
-    local app_asar
-    local resources
-
-    app_asar="$(find_discord_app_asar || true)"
-    if [ -z "$app_asar" ] || [ ! -s "$app_asar" ]; then
-        echo "Discord app.asar is not available yet."
-        return 1
-    fi
-
-    resources="$(dirname "$app_asar")"
-    if [ -s "$resources/_app.asar" ]; then
-        echo "Vencord is installed in $resources."
-        return 0
-    fi
-
-    echo "Installing Vencord into $HOME/.config/discord..."
-    /usr/local/bin/vencord-installer         --install         --location "$HOME/.config/discord"
-
-    if [ ! -s "$resources/_app.asar" ]; then
-        echo "Vencord installer completed, but _app.asar was not created."
-        return 1
-    fi
-
-    echo "Vencord patch verified: $resources/_app.asar"
-}
-
-maximize_discord_forever() {
+maximize_vesktop_forever() {
     while true; do
         while read -r window_id; do
             [ -n "$window_id" ] || continue
             wmctrl -i -r "$window_id" -b add,maximized_vert,maximized_horz 2>/dev/null || true
-        done < <(wmctrl -lx 2>/dev/null | awk 'tolower($0) ~ /discord/ {print $1}')
+        done < <(wmctrl -lx 2>/dev/null | awk 'tolower($0) ~ /vesktop|discord/ {print $1}')
         sleep 2
     done
 }
 
-run_clean_bootstrap_if_needed() {
-    local app_asar
-    local marker
-
-    app_asar="$(find_discord_app_asar || true)"
-
-    if [ -n "$app_asar" ]; then
-        marker="$(bootstrap_marker_for_app "$app_asar")"
-        if [ -f "$marker" ]; then
-            echo "Discord pageReady bootstrap already completed for $(basename "$(dirname "$(dirname "$app_asar")")")."
-            return 0
-        fi
-    fi
-
-    if ! unpatch_vencord_for_bootstrap; then
-        return 1
-    fi
-
-    echo "Running Discord unmodified until splashScreen.pageReady..."
-    echo "Bootstrap timeout: ${DISCORD_BOOTSTRAP_TIMEOUT}s"
-    : > /tmp/discord-bootstrap.log
-
-    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}" \
-        > >(tee /tmp/discord-bootstrap.log) 2>&1 &
-
-    if ! wait_for_discord_bootstrap; then
-        echo "Discord bootstrap failed."
-        echo "Bootstrap log:"
-        cat /tmp/discord-bootstrap.log || true
-        return 1
-    fi
-
-    app_asar="$(find_discord_app_asar || true)"
-    if [ -z "$app_asar" ] || [ ! -s "$app_asar" ]; then
-        echo "Discord reached pageReady but app.asar could not be found."
-        return 1
-    fi
-
-    marker="$(bootstrap_marker_for_app "$app_asar")"
-    touch "$marker"
-
-    echo "Discord pageReady bootstrap marked complete: $marker"
-    echo "Stopping clean bootstrap instance before Vencord patch..."
-    stop_discord
-    sleep 3
-}
-
-mkdir -p "$HOME/.vnc" "$VENCORD_USER_DATA_DIR"
-prepare_vencord_dist
+mkdir -p "$HOME/.vnc"
 
 echo "Creating VNC credentials..."
-printf '%s
-' "$VNC_PASSWORD" | tigervncpasswd -f > "$HOME/.vnc/passwd"
+printf '%s\n' "$VNC_PASSWORD" | tigervncpasswd -f > "$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
 
 echo "Starting TigerVNC desktop on port 5900..."
-Xtigervnc :1     -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}"     -depth "$SCREEN_DEPTH"     -rfbport 5900     -SecurityTypes VncAuth     -PasswordFile "$HOME/.vnc/passwd"     -AlwaysShared     -AcceptSetDesktopSize     -FrameRate "$VNC_FRAME_RATE"     -localhost no     -nolisten tcp     -desktop "Discord Remote Client" &
+Xtigervnc :1 \
+    -geometry "${SCREEN_WIDTH}x${SCREEN_HEIGHT}" \
+    -depth "$SCREEN_DEPTH" \
+    -rfbport 5900 \
+    -SecurityTypes VncAuth \
+    -PasswordFile "$HOME/.vnc/passwd" \
+    -AlwaysShared \
+    -AcceptSetDesktopSize \
+    -FrameRate "$VNC_FRAME_RATE" \
+    -localhost no \
+    -nolisten tcp \
+    -desktop "Vesktop Remote Client" &
 VNC_PID=$!
 
 for _ in $(seq 1 30); do
@@ -281,34 +122,19 @@ echo "Starting Openbox..."
 openbox --sm-disable &
 OPENBOX_PID=$!
 
-maximize_discord_forever &
+maximize_vesktop_forever &
 MAXIMIZER_PID=$!
 
 sleep 1
 
-if ! run_clean_bootstrap_if_needed; then
-    exit 1
-fi
-
-if ! ensure_vencord; then
-    echo "Vencord installation failed."
-    exit 1
-fi
-
-echo "Starting supervised Discord session with SwiftShader CPU rendering..."
+echo "Starting supervised Vesktop session with SwiftShader CPU rendering..."
 
 while true; do
-    if ! ensure_vencord; then
-        echo "Vencord verification failed; retrying in ${DISCORD_RESTART_DELAY}s..."
-        sleep "$DISCORD_RESTART_DELAY"
-        continue
-    fi
-
     set +e
-    dbus-run-session -- /usr/bin/discord "${DISCORD_FLAGS[@]}"
+    dbus-run-session -- /usr/bin/vesktop "${VESKTOP_FLAGS[@]}"
     EXIT_CODE=$?
     set -e
 
-    echo "Discord exited with code $EXIT_CODE. Restarting in ${DISCORD_RESTART_DELAY}s..."
-    sleep "$DISCORD_RESTART_DELAY"
+    echo "Vesktop exited with code $EXIT_CODE. Restarting in ${VESKTOP_RESTART_DELAY}s..."
+    sleep "$VESKTOP_RESTART_DELAY"
 done

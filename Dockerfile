@@ -1,93 +1,14 @@
-FROM node:22-bookworm-slim AS vencord-build
-
-ARG VENCORD_REF=59a54286542651fff5ea53f0ce6cadf2a6aa7521
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN npm install -g pnpm@11.9.0
-
-RUN git clone https://github.com/Vendicated/Vencord.git /src \
-    && cd /src \
-    && git checkout "$VENCORD_REF"
-
-WORKDIR /src
-
-# Headless/VNC compatibility build:
-# 1. Disable every Vencord plugin for a strict A/B test while keeping the renderer
-#    and Webpack hook itself active. This isolates Vencord's Webpack infrastructure
-#    from all required/default/user plugin patches.
-# 2. Load Discord's original preload before injecting Vencord's renderer.
-RUN node <<'NODE'
-const fs = require("fs");
-
-{
-    const path = "src/api/PluginManager.ts";
-    let source = fs.readFileSync(path, "utf8");
-
-    const oldBlock = `export function isPluginEnabled(p: string) {
-    return (
-        Plugins[p]?.required ||
-        Plugins[p]?.isDependency ||
-        Settings.plugins[p]?.enabled
-    ) ?? false;
-}`;
-
-    const newBlock = `export function isPluginEnabled(_p: string) {
-    return false;
-}`;
-
-    if (!source.includes(oldBlock)) {
-        throw new Error("Could not locate isPluginEnabled()");
-    }
-
-    source = source.replace(oldBlock, newBlock);
-    fs.writeFileSync(path, source);
-}
-
-{
-    const path = "src/preload.ts";
-    let source = fs.readFileSync(path, "utf8");
-
-    const oldBlock = `    if (IS_DISCORD_DESKTOP) {
-        webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
-        // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
-        require(process.env.DISCORD_PRELOAD!);
-    }`;
-
-    const newBlock = `    if (IS_DISCORD_DESKTOP) {
-        console.log("[Vencord Headless] Loading original Discord preload first");
-        // Not supported in sandboxed preload scripts but Discord doesn't support it either so who cares
-        require(process.env.DISCORD_PRELOAD!);
-        console.log("[Vencord Headless] Original Discord preload loaded");
-
-        webFrame.executeJavaScript(sendSync<string>(IpcEvents.PRELOAD_GET_RENDERER_JS));
-        console.log("[Vencord Headless] Vencord renderer injection scheduled");
-    }`;
-
-    if (!source.includes(oldBlock)) {
-        throw new Error("Could not locate Vencord preload injection block");
-    }
-
-    source = source.replace(oldBlock, newBlock);
-    fs.writeFileSync(path, source);
-}
-NODE
-
-RUN pnpm install --frozen-lockfile \
-    && pnpm build \
-    && printf '%s\n' "$VENCORD_REF-preload-first-no-plugins" > dist/HEADLESS_BUILD_REF
-
-
 FROM debian:bookworm-slim
+
+ARG VESKTOP_VERSION=1.6.7
+ARG VESKTOP_SHA256=0204a3fcf8861d11debf72a9be70423d2dca6d4698766b6fda7cfe39beea6a61
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/discord
 ENV DISPLAY=:1
-ENV VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
-ENV VENCORD_DEV_INSTALL=1
+ENV XDG_RUNTIME_DIR=/tmp/runtime-discord
+ENV XDG_SESSION_TYPE=x11
+ENV ELECTRON_OZONE_PLATFORM_HINT=x11
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
 
@@ -110,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl-mesa0 \
     mesa-utils \
     libpulse0 \
+    libsecret-1-0 \
     fonts-liberation \
     fonts-noto-color-emoji \
     tzdata \
@@ -118,25 +40,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd --create-home --uid 1000 --shell /bin/bash discord
 
 RUN set -eux; \
-    curl -fL "https://discord.com/api/download?platform=linux&format=deb" \
-      -o /tmp/discord.deb; \
+    curl -fL \
+      "https://github.com/Vencord/Vesktop/releases/download/v${VESKTOP_VERSION}/vesktop_${VESKTOP_VERSION}_amd64.deb" \
+      -o /tmp/vesktop.deb; \
+    echo "${VESKTOP_SHA256}  /tmp/vesktop.deb" | sha256sum -c -; \
     apt-get update; \
-    apt-get install -y --no-install-recommends /tmp/discord.deb; \
-    rm -f /tmp/discord.deb; \
-    command -v discord; \
+    apt-get install -y --no-install-recommends /tmp/vesktop.deb; \
+    rm -f /tmp/vesktop.deb; \
+    command -v vesktop; \
     rm -rf /var/lib/apt/lists/*
 
-RUN set -eux; \
-    curl -fL \
-      "https://github.com/Vencord/Installer/releases/latest/download/VencordInstallerCli-linux" \
-      -o /usr/local/bin/vencord-installer; \
-    chmod 755 /usr/local/bin/vencord-installer
-
-COPY --from=vencord-build /src/dist /usr/local/share/vencord-dist
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
-RUN chown -R root:root /usr/local/share/vencord-dist \
-    && chown root:root /usr/local/bin/entrypoint.sh \
+RUN chown root:root /usr/local/bin/entrypoint.sh \
     && chmod 755 /usr/local/bin/entrypoint.sh
 
 EXPOSE 5900
