@@ -72,13 +72,29 @@ In Remote Desktop Manager, speaker playback and microphone recording redirection
 
 ## Persistence
 
-The complete user configuration directory is stored in:
+The Docker volume is mounted at:
 
 ```text
 /home/discord/.config
 ```
 
-This includes Vesktop/Vencord settings and Discord login state.
+Vesktop is explicitly forced to use:
+
+```text
+VENCORD_USER_DATA_DIR=/home/discord/.config/vesktop
+```
+
+This makes all important Vesktop state land inside the persistent volume:
+
+```text
+/home/discord/.config/vesktop/sessionData/          Discord login/session data
+/home/discord/.config/vesktop/settings/settings.json  Vencord/plugin settings
+/home/discord/.config/vesktop/settings.json         Vesktop settings
+/home/discord/.config/vesktop/state.json            Vesktop state
+/home/discord/.config/vesktop/themes/               Vencord themes
+```
+
+After one successful login and plugin configuration, recreating or updating the container should keep this data as long as the Docker volume itself is not deleted.
 
 ## Dynamic resolution
 
