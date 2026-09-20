@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     procps \
     passwd \
+    chromium \
     pipewire \
     pipewire-bin \
     pipewire-pulse \
@@ -59,6 +60,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends /tmp/vesktop.deb; \
     rm -f /tmp/vesktop.deb; \
     command -v vesktop; \
+    command -v chromium; \
     VESKTOP_BIN="$(readlink -f "$(command -v vesktop)")"; \
     echo "Checking Vesktop runtime libraries: $VESKTOP_BIN"; \
     ldd "$VESKTOP_BIN"; \
@@ -70,12 +72,10 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY startwm.sh /home/discord/startwm.sh
+COPY startwm.sh /etc/xrdp/startwm.sh
 
-RUN chown root:root /usr/local/bin/entrypoint.sh \
-    && chmod 755 /usr/local/bin/entrypoint.sh \
-    && chown discord:discord /home/discord/startwm.sh \
-    && chmod 755 /home/discord/startwm.sh
+RUN chown root:root /usr/local/bin/entrypoint.sh /etc/xrdp/startwm.sh \
+    && chmod 755 /usr/local/bin/entrypoint.sh /etc/xrdp/startwm.sh
 
 EXPOSE 3389
 

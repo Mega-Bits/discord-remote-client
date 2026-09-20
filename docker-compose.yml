@@ -9,6 +9,11 @@ services:
       TZ: "${TZ:-Europe/Berlin}"
       RDP_PASSWORD: "${RDP_PASSWORD:-changeme}"
       VESKTOP_RESTART_DELAY: "${VESKTOP_RESTART_DELAY:-2}"
+      CHROMIUM_RESTART_DELAY: "${CHROMIUM_RESTART_DELAY:-2}"
+      MUSIC_BROWSER_URL: "${MUSIC_BROWSER_URL:-https://www.youtube.com/}"
+      MIC_TO_DISCORD: "${MIC_TO_DISCORD:-1}"
+      MUSIC_TO_DISCORD: "${MUSIC_TO_DISCORD:-1}"
+      MONITOR_MUSIC: "${MONITOR_MUSIC:-1}"
 
     volumes:
       - discord_config:/home/discord/.config

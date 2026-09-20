@@ -1,29 +1,48 @@
 # Discord Remote Client
 
-Docker image for running **Vesktop** with its built-in Vencord integration in an RDP-accessible Linux desktop with two-way audio.
+Docker image for running **Vesktop** plus a dedicated **Chromium music browser** in the same RDP desktop.
 
-## Stack
+## What it does
 
-- Vesktop 1.6.7
-- Built-in Vencord integration
-- xrdp + xorgxrdp
-- PipeWire + pipewire-module-xrdp
-- RDP speaker redirection
-- RDP microphone redirection
-- Openbox
-- SwiftShader CPU rendering for Electron
-- Mesa llvmpipe
-- DBus
-- Persistent user configuration
-- GitHub Actions image build for GHCR
+- Vesktop with built-in Vencord
+- Chromium in the same container / RDP desktop
+- YouTube/browser audio is routed to an internal `music_bus`
+- The music bus and the redirected RDP microphone are mixed into a virtual Discord microphone
+- Discord/Vesktop output is sent back to the RDP client
+- Optional local monitoring of browser music
+- xrdp + xorgxrdp dynamic desktop resizing
+- PipeWire audio routing
+- CPU-only rendering with SwiftShader / Mesa llvmpipe
 
-The image is built for `linux/amd64`.
-
-## Image
+## Audio graph
 
 ```text
-ghcr.io/mega-bits/discord-remote-client:latest
+Chromium / YouTube
+        |
+        v
+    music_bus -------------------+
+        |                        |
+        |                        v
+        |                  discord_mix
+        |                        |
+        |                        v
+        +----> xrdp-sink   discord_mix.monitor
+                 ^                |
+                 |                v
+            Vesktop out      Vesktop mic
+                 ^
+                 |
+             Discord
+
+Local/RDP microphone
+        |
+        v
+   xrdp-source
+        |
+        +--------------------> discord_mix
 ```
+
+The important separation is that Chromium is launched with `PULSE_SINK=music_bus`, so browser audio does not get confused with Discord playback.
 
 ## Deploy
 
@@ -33,101 +52,102 @@ Set an RDP password:
 RDP_PASSWORD=change-me-now
 ```
 
-Then deploy:
+Then:
 
 ```bash
 docker compose pull
 docker compose up -d --force-recreate
 ```
 
-The Compose file binds RDP only to the Docker host loopback interface:
+RDP is bound to:
 
 ```text
 127.0.0.1:3389
 ```
 
-Use an SSH tunnel, VPN, Tailscale or another trusted path from Remote Desktop Manager to the Docker host.
+Use an SSH tunnel, VPN, Tailscale or another trusted path.
 
 ## Remote Desktop Manager
 
-Create an **RDP** entry rather than a VNC entry.
-
-Connection:
+Create an **RDP** entry:
 
 ```text
 Host: 127.0.0.1
 Port: 3389
 Username: discord
-Password: value of RDP_PASSWORD
+Password: RDP_PASSWORD
 ```
 
-Enable RDP remote audio so sound is played on the local computer, and enable audio recording / microphone redirection so the local recording device is exposed to the remote session.
+Enable remote audio playback and microphone/audio-recording redirection if you also want to speak through your local microphone.
 
-xrdp uses the standard RDP audio output and input channels. The PipeWire xrdp module creates:
+Both Vesktop and Chromium start automatically in the RDP session. Chromium opens YouTube by default.
+
+## Vesktop devices
+
+The container forces these devices for Vesktop:
 
 ```text
-xrdp-sink    -> Vesktop/Discord playback back to the RDP client
-xrdp-source  -> RDP client microphone/recording device into Vesktop
+Output: xrdp-sink
+Input:  discord_mix.monitor
 ```
 
-Vesktop should use those as its speaker and microphone devices.
+So Discord receives the internal mixed signal rather than raw browser/system audio.
 
-## Music / virtual audio cable
+## Browser music
 
-For a music-only virtual microphone on Windows:
+Chromium is launched with:
 
-1. Set the browser output device to **CABLE Input (VB-Audio Virtual Cable)**.
-2. Use **CABLE Output** as the recording device redirected by the RDP client.
-3. Select the xrdp microphone/source in Vesktop.
+```text
+PULSE_SINK=music_bus
+```
 
-For simultaneous voice + browser music, use **Voicemeeter**:
+Anything played in this dedicated Chromium instance goes to the internal music bus and can be transmitted as the Discord microphone input.
 
-1. Real microphone -> Voicemeeter hardware input.
-2. Browser / VB-Cable output -> another Voicemeeter input.
-3. Route both inputs to a virtual bus such as **B1**.
-4. Redirect the Voicemeeter B1 output as the RDP microphone.
-5. Vesktop receives the mixed signal through `xrdp-source`.
+By default, the music is also monitored through `xrdp-sink`, so you can hear what is currently being sent.
 
-This lets the remote Vesktop account behave like a music source while you can still talk over the same Discord voice connection.
+## Audio routing switches
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MUSIC_TO_DISCORD` | `1` | Browser/YouTube is included in the Discord microphone mix |
+| `MIC_TO_DISCORD` | `1` | Your redirected RDP microphone is included in the Discord microphone mix |
+| `MONITOR_MUSIC` | `1` | Browser music is also played back to you through RDP |
+| `MUSIC_BROWSER_URL` | `https://www.youtube.com/` | URL opened by the dedicated Chromium browser |
+| `VESKTOP_RESTART_DELAY` | `2` | Vesktop restart delay |
+| `CHROMIUM_RESTART_DELAY` | `2` | Chromium restart delay |
+
+For a pure music-account setup without your local microphone:
+
+```env
+MIC_TO_DISCORD=0
+MUSIC_TO_DISCORD=1
+MONITOR_MUSIC=1
+```
+
+For music plus talking:
+
+```env
+MIC_TO_DISCORD=1
+MUSIC_TO_DISCORD=1
+MONITOR_MUSIC=1
+```
 
 ## Persistence
-
-The complete user configuration directory is stored in the `discord_config` volume:
 
 ```text
 /home/discord/.config
 ```
 
-That includes Vesktop settings, Vencord settings and the Discord web session/login state.
-
-## Dynamic resolution
-
-xorgxrdp uses the RDP desktop session directly, so Remote Desktop Manager can resize the remote desktop through the normal RDP display controls.
-
-## Configuration
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `TZ` | `Europe/Berlin` | Container timezone |
-| `RDP_PASSWORD` | `changeme` | Password for the `discord` RDP user |
-| `VESKTOP_RESTART_DELAY` | `2` | Delay before Vesktop is restarted after closing |
+is persisted in the `discord_config` volume. This stores Vesktop/Vencord state, Discord login data and the dedicated Chromium profile.
 
 ## CPU-only rendering
 
-No physical GPU is required. Vesktop/Electron is launched through SwiftShader:
-
-```text
---use-gl=angle
---use-angle=swiftshader
---enable-unsafe-swiftshader
-```
-
-Mesa llvmpipe is also available for the X11 session.
+No physical GPU is required. Vesktop and Chromium use SwiftShader while Mesa llvmpipe is available for the X11 session.
 
 ## Security
 
-RDP is bound to `127.0.0.1` by default. Keep it behind SSH, WireGuard, Tailscale or another trusted tunnel rather than exposing port 3389 directly to the Internet.
+Keep RDP bound to `127.0.0.1` and reach it only through a trusted tunnel or VPN.
 
-## Vesktop
+## Notes
 
-Vesktop is a third-party Discord client by the Vencord project with Vencord integrated. Its use may be subject to Discord's terms and the Vesktop/Vencord projects' support guidance.
+Vesktop/Vencord are third-party Discord software. Automated or music-oriented use can be subject to Discord's terms and server rules.
