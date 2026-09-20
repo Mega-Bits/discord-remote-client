@@ -22,6 +22,7 @@ RUN set -eux; \
       dpkg-dev \
       meson \
       ninja-build \
+      doxygen \
       libpulse-dev \
       pulseaudio; \
     apt-get build-dep -y pulseaudio; \
