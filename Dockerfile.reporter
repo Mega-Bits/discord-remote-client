@@ -1,0 +1,70 @@
+FROM node:24-bookworm-slim AS vencord-build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN npm install -g pnpm
+
+RUN git clone --depth=1 https://github.com/Vendicated/Vencord.git /src
+
+WORKDIR /src
+
+RUN pnpm install --frozen-lockfile \
+    && pnpm buildReporterDesktop \
+    && git rev-parse HEAD > dist/REPORTER_BUILD_REF
+
+
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV HOME=/home/discord
+ENV DISPLAY=:1
+ENV XDG_RUNTIME_DIR=/tmp/runtime-discord
+ENV XDG_SESSION_TYPE=x11
+ENV VENCORD_USER_DATA_DIR=/home/discord/.config/Vencord
+ENV VENCORD_DEV_INSTALL=1
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV GALLIUM_DRIVER=llvmpipe
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    dbus \
+    dbus-x11 \
+    xauth \
+    x11-utils \
+    tigervnc-standalone-server \
+    tigervnc-tools \
+    openbox \
+    gosu \
+    procps \
+    libgl1-mesa-dri \
+    libegl-mesa0 \
+    libpulse0 \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --uid 1000 --shell /bin/bash discord
+
+RUN set -eux; \
+    curl -fL "https://discord.com/api/download?platform=linux&format=deb" -o /tmp/discord.deb; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends /tmp/discord.deb; \
+    rm -f /tmp/discord.deb; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    curl -fL "https://github.com/Vencord/Installer/releases/latest/download/VencordInstallerCli-linux" \
+      -o /usr/local/bin/vencord-installer; \
+    chmod 755 /usr/local/bin/vencord-installer
+
+COPY --from=vencord-build /src/dist /usr/local/share/vencord-reporter-dist
+COPY reporter-entrypoint.sh /usr/local/bin/reporter-entrypoint.sh
+
+RUN chmod 755 /usr/local/bin/reporter-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/reporter-entrypoint.sh"]
