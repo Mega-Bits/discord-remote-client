@@ -2,6 +2,7 @@
 set -euo pipefail
 
 RDP_PASSWORD="${RDP_PASSWORD:-changeme}"
+RDP_MAX_BPP="${RDP_MAX_BPP:-16}"
 
 SESMAN_PID=""
 XRDP_PID=""
@@ -16,6 +17,22 @@ cleanup() {
 trap cleanup TERM INT EXIT
 
 echo "Preparing Vesktop RDP container..."
+
+case "$RDP_MAX_BPP" in
+    8|15|16|24|32) ;;
+    *)
+        echo "Invalid RDP_MAX_BPP=$RDP_MAX_BPP; expected 8, 15, 16, 24 or 32."
+        exit 1
+        ;;
+esac
+
+echo "Tuning xrdp for CPU-only rendering (max_bpp=$RDP_MAX_BPP)..."
+sed -ri "s/^max_bpp=.*/max_bpp=$RDP_MAX_BPP/" /etc/xrdp/xrdp.ini
+sed -ri 's/^bitmap_cache=.*/bitmap_cache=true/' /etc/xrdp/xrdp.ini
+sed -ri 's/^bitmap_compression=.*/bitmap_compression=true/' /etc/xrdp/xrdp.ini
+sed -ri 's/^bulk_compression=.*/bulk_compression=true/' /etc/xrdp/xrdp.ini
+sed -ri 's/^use_fastpath=.*/use_fastpath=both/' /etc/xrdp/xrdp.ini
+sed -ri 's/^allow_multimon=.*/allow_multimon=false/' /etc/xrdp/xrdp.ini
 
 mkdir -p /home/discord/.config
 chown -R discord:discord /home/discord

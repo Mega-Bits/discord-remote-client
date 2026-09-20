@@ -8,6 +8,7 @@ services:
     environment:
       TZ: "${TZ:-Europe/Berlin}"
       RDP_PASSWORD: "${RDP_PASSWORD:-changeme}"
+      RDP_MAX_BPP: "${RDP_MAX_BPP:-16}"
       VESKTOP_RESTART_DELAY: "${VESKTOP_RESTART_DELAY:-2}"
 
     volumes:

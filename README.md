@@ -81,11 +81,14 @@ xorgxrdp handles RDP desktop resizing directly.
 | --- | --- | --- |
 | `TZ` | `Europe/Berlin` | Container timezone |
 | `RDP_PASSWORD` | `changeme` | Password for the `discord` RDP user |
+| `RDP_MAX_BPP` | `16` | Maximum RDP color depth; 16 is optimized for CPU-only servers |
 | `VESKTOP_RESTART_DELAY` | `2` | Delay before Vesktop restarts after closing |
 
 ## CPU-only rendering
 
-No physical GPU is required. Vesktop/Electron uses SwiftShader and Mesa llvmpipe.
+No physical GPU is required. Vesktop/Electron is configured to use Chromium's GL/ANGLE path on top of Mesa llvmpipe rather than forcing SwiftShader. This generally reduces CPU pressure in the xrdp session.
+
+For best responsiveness on a CPU-only host, use a moderate RDP desktop size such as 1600x900 or 1920x1080. Very large client windows increase the number of pixels xorgxrdp and Electron must process in software.
 
 ## Security
 
