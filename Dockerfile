@@ -15,24 +15,35 @@ RUN git clone https://github.com/Vendicated/Vencord.git /src \
 
 WORKDIR /src
 
-# Headless/VNC workarounds:
-# 1. Disable NoTrack completely for the compatibility test. Its required flag
-#    otherwise keeps all of its Webpack patches active even if start() is a no-op.
+# Headless/VNC compatibility build:
+# 1. Disable every Vencord plugin for a strict A/B test while keeping the renderer
+#    and Webpack hook itself active. This isolates Vencord's Webpack infrastructure
+#    from all required/default/user plugin patches.
 # 2. Load Discord's original preload before injecting Vencord's renderer.
-#    Vanilla Discord reaches pageReady reliably, while the normal Vencord preload
-#    path stalls before pageReady in this headless X11/TigerVNC environment.
 RUN node <<'NODE'
 const fs = require("fs");
 
 {
-    const path = "src/plugins/_core/noTrack.ts";
+    const path = "src/api/PluginManager.ts";
     let source = fs.readFileSync(path, "utf8");
 
-    if (!source.includes("required: true")) {
-        throw new Error("Could not locate NoTrack required flag");
+    const oldBlock = `export function isPluginEnabled(p: string) {
+    return (
+        Plugins[p]?.required ||
+        Plugins[p]?.isDependency ||
+        Settings.plugins[p]?.enabled
+    ) ?? false;
+}`;
+
+    const newBlock = `export function isPluginEnabled(_p: string) {
+    return false;
+}`;
+
+    if (!source.includes(oldBlock)) {
+        throw new Error("Could not locate isPluginEnabled()");
     }
 
-    source = source.replace("required: true", "required: false");
+    source = source.replace(oldBlock, newBlock);
     fs.writeFileSync(path, source);
 }
 
@@ -67,7 +78,7 @@ NODE
 
 RUN pnpm install --frozen-lockfile \
     && pnpm build \
-    && printf '%s\n' "$VENCORD_REF-preload-first-no-notrack" > dist/HEADLESS_BUILD_REF
+    && printf '%s\n' "$VENCORD_REF-preload-first-no-plugins" > dist/HEADLESS_BUILD_REF
 
 
 FROM debian:bookworm-slim
