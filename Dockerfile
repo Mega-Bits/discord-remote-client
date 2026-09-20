@@ -16,7 +16,8 @@ RUN git clone https://github.com/Vendicated/Vencord.git /src \
 WORKDIR /src
 
 # Headless/VNC workarounds:
-# 1. Keep NoTrack, but disable only its Sentry-abort hook.
+# 1. Disable NoTrack completely for the compatibility test. Its required flag
+#    otherwise keeps all of its Webpack patches active even if start() is a no-op.
 # 2. Load Discord's original preload before injecting Vencord's renderer.
 #    Vanilla Discord reaches pageReady reliably, while the normal Vencord preload
 #    path stalls before pageReady in this headless X11/TigerVNC environment.
@@ -26,17 +27,12 @@ const fs = require("fs");
 {
     const path = "src/plugins/_core/noTrack.ts";
     let source = fs.readFileSync(path, "utf8");
-    const pattern = /    start\(\) \{[\s\S]*?\n    \},\n\n    analyticsTrackingStoreMaker\(\) \{/;
 
-    if (!pattern.test(source)) {
-        throw new Error("Could not locate NoTrack.start() block");
+    if (!source.includes("required: true")) {
+        throw new Error("Could not locate NoTrack required flag");
     }
 
-    source = source.replace(
-        pattern,
-        "    start() { },\n\n    analyticsTrackingStoreMaker() {"
-    );
-
+    source = source.replace("required: true", "required: false");
     fs.writeFileSync(path, source);
 }
 
@@ -71,7 +67,7 @@ NODE
 
 RUN pnpm install --frozen-lockfile \
     && pnpm build \
-    && printf '%s\n' "$VENCORD_REF-preload-first" > dist/HEADLESS_BUILD_REF
+    && printf '%s\n' "$VENCORD_REF-preload-first-no-notrack" > dist/HEADLESS_BUILD_REF
 
 
 FROM debian:bookworm-slim
