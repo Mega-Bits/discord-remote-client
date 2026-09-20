@@ -31,6 +31,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl-mesa0 \
     mesa-utils \
     libpulse0 \
+    libasound2 \
     libsecret-1-0 \
     fonts-liberation \
     fonts-noto-color-emoji \
@@ -48,6 +49,13 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends /tmp/vesktop.deb; \
     rm -f /tmp/vesktop.deb; \
     command -v vesktop; \
+    VESKTOP_BIN="$(readlink -f "$(command -v vesktop)")"; \
+    echo "Checking Vesktop runtime libraries: $VESKTOP_BIN"; \
+    ldd "$VESKTOP_BIN"; \
+    if ldd "$VESKTOP_BIN" | grep -q "not found"; then \
+      echo "Vesktop has unresolved shared-library dependencies."; \
+      exit 1; \
+    fi; \
     rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
