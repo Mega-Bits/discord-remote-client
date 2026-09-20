@@ -22,8 +22,10 @@ DISCORD_RESTART_DELAY="${DISCORD_RESTART_DELAY:-2}"
 
 DISCORD_FLAGS=(
     --no-sandbox
-    --disable-gpu
     --ozone-platform=x11
+    --use-gl=angle
+    --use-angle=swiftshader
+    --enable-unsafe-swiftshader
     --disable-renderer-backgrounding
     --disable-background-timer-throttling
     --disable-backgrounding-occluded-windows
@@ -291,7 +293,7 @@ if ! ensure_vencord; then
     exit 1
 fi
 
-echo "Starting supervised Discord session with renderer backgrounding disabled..."
+echo "Starting supervised Discord session with SwiftShader CPU rendering..."
 
 while true; do
     if ! ensure_vencord; then
