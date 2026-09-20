@@ -23,6 +23,9 @@ export XDG_RUNTIME_DIR="/tmp/runtime-discord-${display_id}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
 
+export PULSE_RUNTIME_PATH="$XDG_RUNTIME_DIR/pulse"
+export PULSE_SERVER="unix:$PULSE_RUNTIME_PATH/native"
+
 VESKTOP_FLAGS=(
     --no-sandbox
     --ozone-platform=x11
@@ -34,9 +37,7 @@ VESKTOP_FLAGS=(
     --disable-backgrounding-occluded-windows
 )
 
-PIPEWIRE_PID=""
 PULSE_PID=""
-WIREPLUMBER_PID=""
 OPENBOX_PID=""
 MAXIMIZER_PID=""
 
@@ -45,21 +46,19 @@ cleanup_session() {
     pkill -TERM -u "$(id -u)" -f '/usr/bin/vesktop|/opt/Vesktop/vesktop|vesktop' 2>/dev/null || true
     [ -z "$MAXIMIZER_PID" ] || kill "$MAXIMIZER_PID" 2>/dev/null || true
     [ -z "$OPENBOX_PID" ] || kill "$OPENBOX_PID" 2>/dev/null || true
-    [ -z "$WIREPLUMBER_PID" ] || kill "$WIREPLUMBER_PID" 2>/dev/null || true
     [ -z "$PULSE_PID" ] || kill "$PULSE_PID" 2>/dev/null || true
-    [ -z "$PIPEWIRE_PID" ] || kill "$PIPEWIRE_PID" 2>/dev/null || true
 }
 trap cleanup_session EXIT TERM INT
 
-echo "Starting PipeWire for RDP audio..."
-pipewire >"$XDG_RUNTIME_DIR/pipewire.log" 2>&1 &
-PIPEWIRE_PID=$!
-
-pipewire-pulse >"$XDG_RUNTIME_DIR/pipewire-pulse.log" 2>&1 &
+echo "Starting native PulseAudio for RDP audio..."
+mkdir -p "$PULSE_RUNTIME_PATH"
+pulseaudio \
+    --daemonize=no \
+    --exit-idle-time=-1 \
+    --log-target=stderr \
+    --log-level=notice \
+    >"$XDG_RUNTIME_DIR/pulseaudio.log" 2>&1 &
 PULSE_PID=$!
-
-wireplumber >"$XDG_RUNTIME_DIR/wireplumber.log" 2>&1 &
-WIREPLUMBER_PID=$!
 
 audio_ready=0
 for _ in $(seq 1 30); do
@@ -67,19 +66,53 @@ for _ in $(seq 1 30); do
         audio_ready=1
         break
     fi
+
+    if ! kill -0 "$PULSE_PID" 2>/dev/null; then
+        echo "PulseAudio exited before becoming ready."
+        cat "$XDG_RUNTIME_DIR/pulseaudio.log" || true
+        exit 1
+    fi
+
     sleep 1
 done
 
-if [ "$audio_ready" -eq 1 ]; then
-    echo "Loading xrdp PipeWire audio sink/source..."
-    /usr/libexec/pipewire-module-xrdp/load_pw_modules.sh -l 2 || true
-
-    echo "RDP audio devices:"
-    pactl list short sinks || true
-    pactl list short sources || true
-else
-    echo "PipeWire Pulse compatibility layer did not become ready."
+if [ "$audio_ready" -ne 1 ]; then
+    echo "PulseAudio did not become ready."
+    cat "$XDG_RUNTIME_DIR/pulseaudio.log" || true
+    exit 1
 fi
+
+echo "Loading native PulseAudio XRDP sink/source..."
+if ! /usr/libexec/pulseaudio-module-xrdp/load_pa_modules.sh; then
+    echo "XRDP PulseAudio modules failed to load."
+    cat "$XDG_RUNTIME_DIR/pulseaudio.log" || true
+    pactl list short modules || true
+    exit 1
+fi
+
+echo "RDP PulseAudio devices:"
+pactl list short sinks || true
+pactl list short sources || true
+
+if ! pactl list short sinks | awk '{print $2}' | grep -qx 'xrdp-sink'; then
+    echo "xrdp-sink is missing."
+    exit 1
+fi
+
+if ! pactl list short sources | awk '{print $2}' | grep -qx 'xrdp-source'; then
+    echo "xrdp-source is missing."
+    exit 1
+fi
+
+pactl set-default-sink xrdp-sink
+pactl set-default-source xrdp-source
+pactl set-sink-mute xrdp-sink 0 || true
+pactl set-source-mute xrdp-source 0 || true
+pactl set-sink-volume xrdp-sink 100% || true
+pactl set-source-volume xrdp-source 100% || true
+
+echo "PulseAudio defaults:"
+pactl info | grep -E 'Server Name|Default Sink|Default Source' || true
 
 echo "Starting Openbox..."
 openbox --sm-disable &
@@ -100,7 +133,7 @@ MAXIMIZER_PID=$!
 
 sleep 1
 
-echo "Starting supervised Vesktop session with RDP + CPU compositor..."
+echo "Starting supervised Vesktop session with native PulseAudio XRDP audio..."
 
 while true; do
     set +e

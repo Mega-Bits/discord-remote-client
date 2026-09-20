@@ -8,9 +8,9 @@ Lightweight Docker image for running **Vesktop** with its built-in Vencord integ
 - Built-in Vencord integration
 - xrdp + xorgxrdp
 - Openbox
-- PipeWire xrdp audio support
-- SwiftShader CPU rendering
-- Mesa llvmpipe
+- Native PulseAudio
+- `pulseaudio-module-xrdp` for RDP speaker + microphone redirection
+- CPU-only Electron compositor
 - Persistent user configuration
 
 The image is built for `linux/amd64`.
@@ -59,7 +59,16 @@ Vesktop starts automatically inside the RDP session.
 
 ## Audio
 
-The image keeps standard xrdp PipeWire audio support for normal RDP speaker and microphone redirection. There is no browser, virtual music bus, audio cable or custom mixer in the container.
+The container uses **real PulseAudio**, not PipeWire's PulseAudio compatibility server. The official XRDP PulseAudio modules create:
+
+```text
+xrdp-sink    -> Discord/Vesktop sound to the RDP client
+xrdp-source  -> RDP client's redirected microphone into Discord/Vesktop
+```
+
+The session sets both as defaults and explicitly unmutes them.
+
+In Remote Desktop Manager, speaker playback and microphone recording redirection still need to be enabled for the RDP entry.
 
 ## Persistence
 
@@ -86,9 +95,9 @@ xorgxrdp handles RDP desktop resizing directly.
 
 ## CPU-only rendering
 
-No physical GPU is required. Vesktop/Electron is launched with GPU acceleration and the software GPU rasterizer disabled, forcing Chromium's CPU compositor path for the XRDP framebuffer.
+No physical GPU is required. Vesktop/Electron uses the CPU compositor path for the XRDP framebuffer.
 
-For best responsiveness on a CPU-only host, use a moderate RDP desktop size such as 1280x720, 1600x900 or 1920x1080. Very large client windows increase the number of pixels XRDP and Electron must process in software.
+For best responsiveness use a moderate RDP desktop size such as 1280x720, 1600x900 or 1920x1080.
 
 ## Security
 

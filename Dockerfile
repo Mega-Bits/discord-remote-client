@@ -1,3 +1,45 @@
+FROM debian:bookworm-slim AS pulseaudio-xrdp-builder
+
+ARG PULSEAUDIO_XRDP_REF=c27d5395a15b75dd2cd199b6938d4994e6f173fb
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN printf '%s\n' \
+    'deb-src http://deb.debian.org/debian bookworm main' \
+    'deb-src http://deb.debian.org/debian bookworm-updates main' \
+    'deb-src http://deb.debian.org/debian-security bookworm-security main' \
+    > /etc/apt/sources.list.d/debian-src.list
+
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+      ca-certificates \
+      git \
+      build-essential \
+      autoconf \
+      automake \
+      libtool \
+      pkg-config \
+      dpkg-dev \
+      meson \
+      ninja-build \
+      libpulse-dev \
+      pulseaudio; \
+    apt-get build-dep -y pulseaudio; \
+    mkdir -p /build; \
+    cd /build; \
+    apt-get source pulseaudio; \
+    PULSE_DIR="$(find /build -mindepth 1 -maxdepth 1 -type d -name 'pulseaudio-*' | head -n 1)"; \
+    test -n "$PULSE_DIR"; \
+    cd "$PULSE_DIR"; \
+    meson setup build; \
+    git clone https://github.com/neutrinolabs/pulseaudio-module-xrdp.git /build/pulseaudio-module-xrdp; \
+    cd /build/pulseaudio-module-xrdp; \
+    git checkout "$PULSEAUDIO_XRDP_REF"; \
+    ./bootstrap; \
+    PULSE_DIR="$PULSE_DIR" PULSE_CONFIG_DIR="$PULSE_DIR/build" ./configure; \
+    make -j"$(nproc)"; \
+    make install DESTDIR=/out
+
 FROM debian:bookworm-slim
 
 ARG VESKTOP_VERSION=1.6.7
@@ -9,9 +51,6 @@ ENV XDG_SESSION_TYPE=x11
 ENV ELECTRON_OZONE_PLATFORM_HINT=x11
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
-
-RUN echo "deb http://deb.debian.org/debian bookworm-backports main" \
-      > /etc/apt/sources.list.d/bookworm-backports.list
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -29,10 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tini \
     procps \
     passwd \
-    pipewire \
-    pipewire-bin \
-    pipewire-pulse \
-    wireplumber \
+    pulseaudio \
     pulseaudio-utils \
     libgl1-mesa-dri \
     libegl-mesa0 \
@@ -43,10 +79,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-color-emoji \
     tzdata \
-    && apt-get install -y -t bookworm-backports --no-install-recommends \
-    pipewire-module-xrdp \
-    libpipewire-0.3-modules-xrdp \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=pulseaudio-xrdp-builder /out/ /
 
 RUN useradd --create-home --uid 1000 --shell /bin/bash discord
 
@@ -66,7 +101,8 @@ RUN set -eux; \
       echo "Vesktop has unresolved shared-library dependencies."; \
       exit 1; \
     fi; \
-    test -x /usr/libexec/pipewire-module-xrdp/load_pw_modules.sh; \
+    test -x /usr/libexec/pulseaudio-module-xrdp/load_pa_modules.sh; \
+    find /usr/lib -name 'module-xrdp-sink.so' -o -name 'module-xrdp-source.so'; \
     rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
