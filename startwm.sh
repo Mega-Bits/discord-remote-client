@@ -57,11 +57,17 @@ WIREPLUMBER_PID=""
 OPENBOX_PID=""
 MAXIMIZER_PID=""
 CHROMIUM_SUPERVISOR_PID=""
+MUSIC_TO_DISCORD_PID=""
+MIC_TO_DISCORD_PID=""
+MONITOR_MUSIC_PID=""
 
 cleanup_session() {
     trap - TERM INT
     pkill -TERM -u "$(id -u)" -f '/usr/bin/vesktop|/opt/Vesktop/vesktop|vesktop|/usr/bin/chromium|chromium' 2>/dev/null || true
     [ -z "$CHROMIUM_SUPERVISOR_PID" ] || kill "$CHROMIUM_SUPERVISOR_PID" 2>/dev/null || true
+    [ -z "$MUSIC_TO_DISCORD_PID" ] || kill "$MUSIC_TO_DISCORD_PID" 2>/dev/null || true
+    [ -z "$MIC_TO_DISCORD_PID" ] || kill "$MIC_TO_DISCORD_PID" 2>/dev/null || true
+    [ -z "$MONITOR_MUSIC_PID" ] || kill "$MONITOR_MUSIC_PID" 2>/dev/null || true
     [ -z "$MAXIMIZER_PID" ] || kill "$MAXIMIZER_PID" 2>/dev/null || true
     [ -z "$OPENBOX_PID" ] || kill "$OPENBOX_PID" 2>/dev/null || true
     [ -z "$WIREPLUMBER_PID" ] || kill "$WIREPLUMBER_PID" 2>/dev/null || true
@@ -114,49 +120,108 @@ if [ "$xrdp_audio_ready" -ne 1 ]; then
     exit 1
 fi
 
-echo "Creating internal music and Discord mix buses..."
-pactl load-module module-null-sink \
-    sink_name=music_bus \
-    sink_properties=device.description=Music_Bus >/dev/null
+echo "Creating internal music and Discord mix buses with native PipeWire..."
 
-pactl load-module module-null-sink \
-    sink_name=discord_mix \
-    sink_properties=device.description=Discord_Mix >/dev/null
+pw-cli create-node adapter '{
+    factory.name=support.null-audio-sink
+    node.name=music_bus
+    node.description="Music Bus"
+    media.class=Audio/Sink
+    object.linger=true
+    audio.position=[FL FR]
+    monitor.channel-volumes=true
+    monitor.passthrough=true
+}' >/dev/null
+
+pw-cli create-node adapter '{
+    factory.name=support.null-audio-sink
+    node.name=discord_mix
+    node.description="Discord Mix"
+    media.class=Audio/Sink
+    object.linger=true
+    audio.position=[FL FR]
+    monitor.channel-volumes=true
+    monitor.passthrough=true
+}' >/dev/null
+
+for _ in $(seq 1 30); do
+    if pactl list short sinks | awk '{print $2}' | grep -qx 'music_bus' \
+       && pactl list short sinks | awk '{print $2}' | grep -qx 'discord_mix' \
+       && pactl list short sources | awk '{print $2}' | grep -qx 'discord_mix.monitor'; then
+        break
+    fi
+    sleep 1
+done
+
+if ! pactl list short sinks | awk '{print $2}' | grep -qx 'music_bus' \
+   || ! pactl list short sinks | awk '{print $2}' | grep -qx 'discord_mix' \
+   || ! pactl list short sources | awk '{print $2}' | grep -qx 'discord_mix.monitor'; then
+    echo "Native PipeWire virtual audio devices were not created."
+    pw-cli ls Node || true
+    pactl list short sinks || true
+    pactl list short sources || true
+    exit 1
+fi
 
 if [ "$MUSIC_TO_DISCORD" = "1" ]; then
-    pactl load-module module-loopback \
-        source=music_bus.monitor \
-        sink=discord_mix \
-        latency_msec=50 >/dev/null
+    pw-loopback \
+        --name=music-to-discord \
+        --latency=50 \
+        --capture-props='{"target.object":"music_bus","stream.capture.sink":true,"node.passive":true}' \
+        --playback=discord_mix \
+        >"$XDG_RUNTIME_DIR/music-to-discord.log" 2>&1 &
+    MUSIC_TO_DISCORD_PID=$!
 fi
 
 if [ "$MIC_TO_DISCORD" = "1" ]; then
-    pactl load-module module-loopback \
-        source=xrdp-source \
-        sink=discord_mix \
-        latency_msec=50 >/dev/null
+    pw-loopback \
+        --name=mic-to-discord \
+        --latency=50 \
+        --capture=xrdp-source \
+        --playback=discord_mix \
+        >"$XDG_RUNTIME_DIR/mic-to-discord.log" 2>&1 &
+    MIC_TO_DISCORD_PID=$!
 fi
 
 if [ "$MONITOR_MUSIC" = "1" ]; then
-    pactl load-module module-loopback \
-        source=music_bus.monitor \
-        sink=xrdp-sink \
-        latency_msec=50 >/dev/null
+    pw-loopback \
+        --name=monitor-music \
+        --latency=50 \
+        --capture-props='{"target.object":"music_bus","stream.capture.sink":true,"node.passive":true}' \
+        --playback=xrdp-sink \
+        >"$XDG_RUNTIME_DIR/monitor-music.log" 2>&1 &
+    MONITOR_MUSIC_PID=$!
 fi
 
-pactl set-default-sink xrdp-sink
-pactl set-default-source discord_mix.monitor
+sleep 1
+
+for spec in \
+    "$MUSIC_TO_DISCORD:$MUSIC_TO_DISCORD_PID:music-to-discord" \
+    "$MIC_TO_DISCORD:$MIC_TO_DISCORD_PID:mic-to-discord" \
+    "$MONITOR_MUSIC:$MONITOR_MUSIC_PID:monitor-music"; do
+    enabled="${spec%%:*}"
+    rest="${spec#*:}"
+    pid="${rest%%:*}"
+    name="${rest#*:}"
+
+    if [ "$enabled" = "1" ] && { [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; }; then
+        echo "PipeWire loopback $name failed to stay running."
+        cat "$XDG_RUNTIME_DIR/$name.log" 2>/dev/null || true
+        exit 1
+    fi
+done
 
 echo "Audio routing:"
 echo "  Chromium -> music_bus"
-echo "  music_bus.monitor -> discord_mix: $MUSIC_TO_DISCORD"
-echo "  xrdp-source -> discord_mix:       $MIC_TO_DISCORD"
-echo "  music_bus.monitor -> xrdp-sink:   $MONITOR_MUSIC"
+echo "  music_bus monitor -> discord_mix: $MUSIC_TO_DISCORD"
+echo "  xrdp-source -> discord_mix:        $MIC_TO_DISCORD"
+echo "  music_bus monitor -> xrdp-sink:    $MONITOR_MUSIC"
 echo "  Vesktop mic -> discord_mix.monitor"
 echo "  Vesktop speakers -> xrdp-sink"
 echo
 pactl list short sinks || true
 pactl list short sources || true
+pw-link -l 2>/dev/null || true
 
 echo "Starting Openbox..."
 openbox --sm-disable &
