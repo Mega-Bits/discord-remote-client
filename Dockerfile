@@ -5,12 +5,13 @@ ARG VESKTOP_SHA256=0204a3fcf8861d11debf72a9be70423d2dca6d4698766b6fda7cfe39beea6
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/discord
-ENV DISPLAY=:1
-ENV XDG_RUNTIME_DIR=/tmp/runtime-discord
 ENV XDG_SESSION_TYPE=x11
 ENV ELECTRON_OZONE_PLATFORM_HINT=x11
 ENV LIBGL_ALWAYS_SOFTWARE=1
 ENV GALLIUM_DRIVER=llvmpipe
+
+RUN echo "deb http://deb.debian.org/debian bookworm-backports main" \
+      > /etc/apt/sources.list.d/bookworm-backports.list
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -20,13 +21,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xauth \
     x11-utils \
     xdg-utils \
-    tigervnc-standalone-server \
-    tigervnc-tools \
+    xrdp \
+    xorgxrdp \
+    xserver-xorg-core \
     openbox \
     wmctrl \
-    gosu \
     tini \
     procps \
+    passwd \
+    pipewire \
+    pipewire-bin \
+    pipewire-pulse \
+    wireplumber \
+    pulseaudio-utils \
     libgl1-mesa-dri \
     libegl-mesa0 \
     mesa-utils \
@@ -36,6 +43,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-color-emoji \
     tzdata \
+    && apt-get install -y -t bookworm-backports --no-install-recommends \
+    pipewire-module-xrdp \
+    libpipewire-0.3-modules-xrdp \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1000 --shell /bin/bash discord
@@ -56,13 +66,17 @@ RUN set -eux; \
       echo "Vesktop has unresolved shared-library dependencies."; \
       exit 1; \
     fi; \
+    test -x /usr/libexec/pipewire-module-xrdp/load_pw_modules.sh; \
     rm -rf /var/lib/apt/lists/*
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY startwm.sh /home/discord/startwm.sh
 
 RUN chown root:root /usr/local/bin/entrypoint.sh \
-    && chmod 755 /usr/local/bin/entrypoint.sh
+    && chmod 755 /usr/local/bin/entrypoint.sh \
+    && chown discord:discord /home/discord/startwm.sh \
+    && chmod 755 /home/discord/startwm.sh
 
-EXPOSE 5900
+EXPOSE 3389
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]

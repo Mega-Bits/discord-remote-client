@@ -7,18 +7,14 @@ services:
 
     environment:
       TZ: "${TZ:-Europe/Berlin}"
-      SCREEN_WIDTH: "${SCREEN_WIDTH:-1920}"
-      SCREEN_HEIGHT: "${SCREEN_HEIGHT:-1080}"
-      SCREEN_DEPTH: "${SCREEN_DEPTH:-24}"
-      VNC_FRAME_RATE: "${VNC_FRAME_RATE:-60}"
-      VNC_PASSWORD: "${VNC_PASSWORD}"
+      RDP_PASSWORD: "${RDP_PASSWORD:-changeme}"
       VESKTOP_RESTART_DELAY: "${VESKTOP_RESTART_DELAY:-2}"
 
     volumes:
       - discord_config:/home/discord/.config
 
     ports:
-      - "127.0.0.1:5900:5900"
+      - "127.0.0.1:3389:3389"
 
 volumes:
   discord_config:
