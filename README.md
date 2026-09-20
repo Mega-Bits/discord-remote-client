@@ -86,9 +86,9 @@ xorgxrdp handles RDP desktop resizing directly.
 
 ## CPU-only rendering
 
-No physical GPU is required. Vesktop/Electron is configured to use Chromium's GL/ANGLE path on top of Mesa llvmpipe rather than forcing SwiftShader. This generally reduces CPU pressure in the xrdp session.
+No physical GPU is required. Vesktop/Electron is launched with GPU acceleration and the software GPU rasterizer disabled, forcing Chromium's CPU compositor path for the XRDP framebuffer.
 
-For best responsiveness on a CPU-only host, use a moderate RDP desktop size such as 1600x900 or 1920x1080. Very large client windows increase the number of pixels xorgxrdp and Electron must process in software.
+For best responsiveness on a CPU-only host, use a moderate RDP desktop size such as 1280x720, 1600x900 or 1920x1080. Very large client windows increase the number of pixels XRDP and Electron must process in software.
 
 ## Security
 

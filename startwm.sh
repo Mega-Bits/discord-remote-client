@@ -26,10 +26,9 @@ chmod 700 "$XDG_RUNTIME_DIR"
 VESKTOP_FLAGS=(
     --no-sandbox
     --ozone-platform=x11
-    --ignore-gpu-blocklist
-    --enable-gpu-rasterization
-    --use-gl=angle
-    --use-angle=gl
+    --disable-gpu
+    --disable-software-rasterizer
+    --disable-gpu-compositing
     --disable-renderer-backgrounding
     --disable-background-timer-throttling
     --disable-backgrounding-occluded-windows
@@ -101,7 +100,7 @@ MAXIMIZER_PID=$!
 
 sleep 1
 
-echo "Starting supervised Vesktop session with RDP + Mesa llvmpipe rendering..."
+echo "Starting supervised Vesktop session with RDP + CPU compositor..."
 
 while true; do
     set +e
